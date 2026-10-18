@@ -303,6 +303,26 @@ class OpportunityUtilityTests(unittest.TestCase):
             "unknown",
         )
 
+    def test_remotejobs_explicit_country_exclusion_is_respected(self):
+        job = opportunity._remotejobs_job({
+            "title": "Data Entry Clerk",
+            "company": {"name": "Example Ltd"},
+            "url": "https://remotejobs.org/remote-jobs/test-excluded-country",
+            "location": "Remote (Worldwide)",
+            "location_normalization": {
+                "scope": "worldwide",
+                "work_arrangement": "remote",
+                "allowed_countries": [],
+                "excluded_countries": ["NG"],
+                "regions": [],
+            },
+            "description": "Enter records accurately.",
+            "posted_at": "2026-10-17T12:00:00Z",
+        })
+        self.assertIsNotNone(job)
+        self.assertIn("Nigeria", job["location"])
+        self.assertFalse(opportunity._matches_location(job, "Nigeria"))
+
 
 if __name__ == "__main__":
     unittest.main()
