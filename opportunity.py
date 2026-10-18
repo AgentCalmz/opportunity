@@ -683,32 +683,74 @@ def _fetch_remotive(query: str, days: int | None) -> dict[str, Any]:
 def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
     source_id, source_name = "remotejobsorg", "RemoteJobs.org"
     try:
-        params = urllib.parse.urlencode({"q": query, "limit": 50, "offset": 0})
-        url = "https://remotejobs.org/api/v1/jobs?" + params
-        data, meta = _request_json(url, ttl_seconds=HOUR)
-        rows = data.get("data", []) if isinstance(data, dict) else []
-        jobs = []
-        for raw in rows if isinstance(rows, list) else []:
-            if isinstance(raw, dict):
-                company = raw.get("company")
-                company_name = company.get("name") if isinstance(company, dict) else company
-                category = raw.get("category")
-                category_name = category.get("name") if isinstance(category, dict) else category
-                job_url = raw.get("url")
-                job = _make_job(
-                    source_id=source_id, source_name=source_name,
-                    title=raw.get("title"), company=company_name, url=job_url,
-                    description=raw.get("description"), summary=raw.get("description"),
-                    published_at=raw.get("posted_at"), location=raw.get("location") or "Remote",
-                    remote_status="remote", employment_type=raw.get("type"),
-                    tags=[category_name] if category_name else [],
-                    salary_min=raw.get("salary_min"), salary_max=raw.get("salary_max"),
-                    salary_currency=raw.get("salary_currency"), salary_period=raw.get("salary_period"),
-                    apply_url=raw.get("apply_url") or job_url,
-                )
-                if job:
-                    jobs.append(job)
-        return _result(source_id, source_name, jobs, meta)
+        jobs: list[dict[str, Any]] = []
+        cache_used = True
+        stale = False
+        pages_read = 0
+        partial = False
+        variants = _query_variants(query)
+        cutoff = _now_utc() - timedelta(days=days) if days is not None else None
+        page_limit = min(MAX_SOURCE_PAGES, 2)
+
+        for variant in variants:
+            offset = 0
+            for page_index in range(page_limit):
+                params = urllib.parse.urlencode({"q": variant, "limit": 50, "offset": offset})
+                url = "https://remotejobs.org/api/v1/jobs?" + params
+                data, meta = _request_json(url, ttl_seconds=HOUR)
+                cache_used = cache_used and bool(meta.get("cache_used"))
+                stale = stale or bool(meta.get("cache_stale"))
+                rows = data.get("data", []) if isinstance(data, dict) else []
+                if not isinstance(rows, list) or not rows:
+                    break
+                pages_read += 1
+                for raw in rows:
+                    if not isinstance(raw, dict):
+                        continue
+                    company = raw.get("company")
+                    company_name = company.get("name") if isinstance(company, dict) else company
+                    category = raw.get("category")
+                    category_name = category.get("name") if isinstance(category, dict) else category
+                    tags = [category_name] if category_name else []
+                    if isinstance(category, dict) and category.get("slug"):
+                        tags.append(str(category["slug"]))
+                    job_url = raw.get("url")
+                    job = _make_job(
+                        source_id=source_id, source_name=source_name,
+                        title=raw.get("title"), company=company_name, url=job_url,
+                        description=raw.get("description"), summary=raw.get("description"),
+                        published_at=raw.get("posted_at"), location=raw.get("location") or "Remote",
+                        remote_status="remote", employment_type=raw.get("type"),
+                        tags=tags, salary_min=raw.get("salary_min"), salary_max=raw.get("salary_max"),
+                        salary_currency=raw.get("salary_currency"), salary_period=raw.get("salary_period"),
+                        apply_url=raw.get("apply_url") or job_url,
+                    )
+                    if job:
+                        job["salary_text"] = raw.get("salary_text")
+                        job["company_website"] = company.get("website") if isinstance(company, dict) else None
+                        jobs.append(job)
+
+                dates = [
+                    parse_datetime(raw.get("posted_at"))
+                    for raw in rows if isinstance(raw, dict)
+                ]
+                if cutoff and dates and all(posted is not None and posted < cutoff for posted in dates):
+                    break
+                pagination = data.get("pagination", {}) if isinstance(data, dict) else {}
+                if not isinstance(pagination, dict) or not pagination.get("has_more"):
+                    break
+                offset += len(rows)
+                if page_index == page_limit - 1:
+                    partial = True
+
+        meta_summary = {"cache_used": cache_used, "cache_stale": stale}
+        message = f"Queried {len(variants)} keyword phrase(s) across {pages_read} page(s)."
+        if partial:
+            message += f" Page cap ({page_limit} pages per phrase) reached; increase OPPORTUNITY_MAX_PAGES cautiously if needed."
+        return _result(
+            source_id, source_name, jobs, meta_summary,
+            status="partial" if partial else "ok", message=message
+        )
     except Exception as exc:
         return _source_error(source_id, source_name, exc)
 
@@ -789,6 +831,7 @@ SOURCE_RUNNERS: dict[str, tuple[str, Callable[..., dict[str, Any]]]] = {
     "himalayas": ("Himalayas", _fetch_himalayas),
     "jobicy": ("Jobicy", _fetch_jobicy),
     "remoteok": ("Remote OK", _fetch_remoteok),
+    "remotejobsorg": ("RemoteJobs.org", _fetch_remotejobsorg),
     "weworkremotely": ("We Work Remotely", _fetch_wwr),
     "remotive": ("Remotive", _fetch_remotive),
     "arbeitnow-eu": ("Arbeitnow (Europe)", lambda query, days: _fetch_arbeitnow(
@@ -803,6 +846,26 @@ SOURCE_RUNNERS: dict[str, tuple[str, Callable[..., dict[str, Any]]]] = {
 # ---------------------------------------------------------------------------
 # Search, timeframe filters, deduplication, and report generation
 # ---------------------------------------------------------------------------
+
+def _query_variants(query: str) -> list[str]:
+    """A small, explicit synonym map for roles often advertised under different titles."""
+    normalized = normalize_text(query)
+    if normalized in {
+        "data entry", "data entry jobs", "data entry job", "data entry clerk",
+        "data entry operator", "data entry specialist",
+    }:
+        return [
+            "data entry",
+            "data entry clerk",
+            "data entry specialist",
+            "data entry operator",
+            "data encoder",
+            "data capture",
+            "data transcription",
+            "records clerk",
+        ]
+    return [query.strip()]
+
 
 def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
     """Score relevance by field so incidental words in a long description aren't enough."""
