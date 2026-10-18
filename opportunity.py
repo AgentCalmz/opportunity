@@ -1269,7 +1269,7 @@ def search_jobs(
     days: int | None = None,
     since: str | date | datetime | None = None,
     location: str | None = None,
-    remote_only: bool = True,
+    remote_only: bool = False,
     max_results: int = 5000,
     sources: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -1284,7 +1284,7 @@ def search_jobs(
         days: Optional rolling window in days (e.g. 5). Mutually exclusive with since.
         since: Optional date/datetime cutoff; accepts YYYY-MM-DD or datetime.
         location: Optional country or region such as "Nigeria".
-        remote_only: Exclude known non-remote jobs by default.
+        remote_only: If True, exclude known onsite/hybrid jobs; False keeps all work modes.
         max_results: Maximum number of matching jobs returned (not pages fetched).
         sources: Optional source IDs to query. Omit to run every configured source.
     """
@@ -1449,7 +1449,8 @@ def search_jobs(
 def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> None:
     """Print a human-readable report while preserving all text in report['results']."""
     print(f'\nOPPORTUNITY SEARCH: "{report["query"]}"')
-    print(f'Timeframe: {report["timeframe"]} | Remote only: {report["remote_only"]}')
+    work_mode_filter = "remote only" if report["remote_only"] else "all work modes (where available)"
+    print(f'Timeframe: {report["timeframe"]} | Work mode filter: {work_mode_filter}')
     print(f'Search took {report["elapsed_seconds"]}s; {report["results_count"]} candidate listing(s) returned.')
     print(f'Direct/related title or skill matches: {report.get("strong_matches_count", 0)} | Broader keyword matches: {report.get("broader_matches_count", 0)}')
     print("\nSOURCE STATUS")
@@ -1528,14 +1529,14 @@ def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> No
 
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Search multiple public remote-job feeds from your PC or Google Colab."
+        description="Search multiple public job feeds from your PC or Google Colab."
     )
     parser.add_argument("query", help='Keyword phrase, e.g. "data entry"')
     timeframe = parser.add_mutually_exclusive_group()
     timeframe.add_argument("--days", type=int, help="Rolling publication window, e.g. --days 5")
     timeframe.add_argument("--since", help="Only listings on/after YYYY-MM-DD")
     parser.add_argument("--location", help='Country/region filter, e.g. "Nigeria"')
-    parser.add_argument("--include-nonremote", action="store_true", help="Include known onsite/hybrid results")
+    parser.add_argument("--remote-only", action="store_true", help="Exclude known onsite/hybrid results (default: include all work modes where available)")
     parser.add_argument("--max-results", type=int, default=5000, help="Maximum displayed results (default: 5000; raise only if needed)")
     parser.add_argument("--source", action="append", help=f"Source ID to run; repeatable. Available: {', '.join(SOURCE_RUNNERS)}")
     parser.add_argument("--json", action="store_true", help="Print the full JSON report")
@@ -1553,7 +1554,7 @@ def _main(argv: list[str] | None = None) -> int:
             days=args.days,
             since=args.since,
             location=args.location,
-            remote_only=not args.include_nonremote,
+            remote_only=args.remote_only,
             max_results=args.max_results,
             sources=args.source,
         )
