@@ -4,6 +4,17 @@ A Python-first, local/Google Colab-friendly **multi-source job discovery tool**.
 
 > **Coverage honesty:** no public interface can guarantee every job on every platform. This project queries its configured sources and reports which ones succeeded, failed, used cached results, or hit a pagination cap. It does not claim a source was searched when it was not.
 
+## Hosted website (GitHub Pages)
+
+This branch adds a polished, responsive website in the `site/` folder. It is plain HTML, CSS, and JavaScript, so no frontend build system or paid hosting is required. The browser searches and filters a generated job snapshot; it does not call every provider API directly.
+
+The `Refresh listings & deploy website` GitHub Actions workflow runs the Python tests, collects listings published in the last 14 days, writes `site/data/jobs.json`, validates the website assets, and deploys the static site with GitHub Pages. The workflow is scheduled for every six hours once it runs on the repository's default branch. GitHub schedules run from the default branch; while this is still a feature branch, use Actions → Refresh listings & deploy website → Run workflow to test it manually.
+
+**To enable hosting:** open the repository's **Settings → Pages**, set **Build and deployment → Source** to **GitHub Actions**, then open the **Actions** tab and run **Refresh listings & deploy website** on this branch. Review its log and the deployment URL. The first run can take longer because it queries all configured public feeds. If you later merge this branch into `main`, the same workflow deploys on pushes to `main` and scheduled refreshes can run automatically.
+
+**What this hosting setup does:** keeps a refreshed snapshot of jobs, then lets visitors search and filter that snapshot in the browser. It is not a server-side API and does not update on every keystroke from upstream feeds; new source data arrives when the workflow successfully refreshes the snapshot. Provider limits, publication windows, and failures can affect coverage. The interface keeps original listing and application links so users can verify each lead.
+
+
 ## Run on your PC
 
 Requires Python 3.10+ (Python 3.11+ recommended). The core search uses only the Python standard library—no package installation is required.
