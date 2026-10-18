@@ -716,11 +716,31 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
                     if isinstance(category, dict) and category.get("slug"):
                         tags.append(str(category["slug"]))
                     job_url = raw.get("url")
+                    location = str(raw.get("location") or "Remote / eligibility not specified")
+                    location_info = raw.get("location_normalization")
+                    if isinstance(location_info, dict):
+                        scope = str(location_info.get("scope") or "").casefold()
+                        allowed = location_info.get("allowed_countries") or []
+                        country_names = {
+                            "NG": "Nigeria", "US": "United States", "GB": "United Kingdom",
+                            "CA": "Canada", "AU": "Australia", "IN": "India", "ZA": "South Africa",
+                            "KE": "Kenya", "GH": "Ghana", "PH": "Philippines", "DE": "Germany",
+                            "FR": "France", "IE": "Ireland", "NZ": "New Zealand", "BR": "Brazil",
+                            "MX": "Mexico", "PT": "Portugal", "ES": "Spain", "NL": "Netherlands",
+                        }
+                        if scope == "worldwide":
+                            location += " | Worldwide"
+                        elif isinstance(allowed, list) and allowed:
+                            readable = [country_names.get(str(code).upper(), str(code)) for code in allowed]
+                            location += " | Eligible countries: " + ", ".join(readable)
+                        regions = location_info.get("regions") or []
+                        if isinstance(regions, list) and regions:
+                            location += " | Regions: " + ", ".join(str(region) for region in regions)
                     job = _make_job(
                         source_id=source_id, source_name=source_name,
                         title=raw.get("title"), company=company_name, url=job_url,
                         description=raw.get("description"), summary=raw.get("description"),
-                        published_at=raw.get("posted_at"), location=raw.get("location") or "Remote",
+                        published_at=raw.get("posted_at"), location=location,
                         remote_status="remote", employment_type=raw.get("type"),
                         tags=tags, salary_min=raw.get("salary_min"), salary_max=raw.get("salary_max"),
                         salary_currency=raw.get("salary_currency"), salary_period=raw.get("salary_period"),
