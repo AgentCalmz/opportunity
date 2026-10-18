@@ -1029,12 +1029,23 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
             return 90, "exact phrase in skills/tags"
         if phrase in title:
             return 100, "exact phrase in title"
-        # Keep all exact phrase occurrences, even when they are only in the body.
-        # This intentionally favors recall; score/reason communicates the weaker evidence.
+        # Keep exact phrases and the common alternate job titles even when they appear in the body.
+        # This intentionally favors recall; match score/reason communicates weaker evidence.
         if phrase in summary:
             return 42, "phrase in summary; broader match"
         if phrase in description:
             return 35, "exact phrase in full description; broader match"
+        related_body_terms = (
+            "data encoder", "data capture", "data transcription", "data transcriber",
+            "records clerk", "records specialist", "document indexing", "document processing",
+            "data processing", "information processing", "underwriting support",
+        )
+        for alias in related_body_terms:
+            if alias in summary:
+                return 40, f"related phrase in summary: {alias}"
+        for alias in related_body_terms:
+            if alias in description:
+                return 25, f"related phrase in full description: {alias}; broad match"
         if all(term in title for term in terms):
             return 70, "query words in title"
         if all(term in metadata for term in terms):
@@ -1343,6 +1354,7 @@ def search_jobs(
             "excluded_by_timeframe": excluded_date,
             "excluded_unknown_publication_date": excluded_unknown_date,
             "excluded_by_location": excluded_location,
+            "location_eligibility_unknown_count": sum(1 for job in results if job.get("location_eligibility") == "Not specified by source; check the original listing"),
             "excluded_non_remote": excluded_nonremote,
             "source_errors": sum(1 for source in source_reports if source["status"] == "error"),
             "source_partials": sum(1 for source in source_reports if source["status"] == "partial"),
