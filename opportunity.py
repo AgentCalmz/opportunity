@@ -880,21 +880,33 @@ SOURCE_RUNNERS: dict[str, tuple[str, Callable[..., dict[str, Any]]]] = {
 # ---------------------------------------------------------------------------
 
 def _query_variants(query: str) -> list[str]:
-    """A small, explicit synonym map for roles often advertised under different titles."""
+    """Generate role-title variants to improve recall without replacing the original query."""
     normalized = normalize_text(query)
     if normalized in {
         "data entry", "data entry jobs", "data entry job", "data entry clerk",
-        "data entry operator", "data entry specialist",
+        "data entry operator", "data entry specialist", "data entry keyer",
     }:
+        # These are common adjacent titles for data-entry/keying work. Results are labeled
+        # by how they match; the search does not silently discard related postings.
         return [
             "data entry",
             "data entry clerk",
             "data entry specialist",
             "data entry operator",
+            "data entry keyer",
+            "data entry machine operator",
             "data encoder",
             "data capture",
             "data transcription",
+            "data transcriber",
             "records clerk",
+            "records specialist",
+            "document indexing clerk",
+            "document processing clerk",
+            "data processing clerk",
+            "data processing assistant",
+            "information processing clerk",
+            "underwriting support specialist",
         ]
     return [query.strip()]
 
