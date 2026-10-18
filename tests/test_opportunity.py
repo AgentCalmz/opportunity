@@ -1,5 +1,6 @@
 import inspect
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 import opportunity
@@ -217,6 +218,90 @@ class OpportunityUtilityTests(unittest.TestCase):
         self.assertIsNotNone(job)
         self.assertIn("Nigeria", job["location"])
         self.assertTrue(opportunity._matches_location(job, "Nigeria"))
+
+    def test_recall_first_search_keeps_description_only_phrase_matches(self):
+        job = opportunity._make_job(
+            source_id="test",
+            source_name="Test source",
+            title="Operations Associate",
+            company="Example Ltd",
+            url="https://example.com/jobs/recall-test",
+            description="This role sometimes includes data entry work.",
+            summary="Coordinate operations and reporting.",
+            published_at="2026-10-17T12:00:00Z",
+            location="Remote / country eligibility not specified",
+        )
+        self.assertIsNotNone(job)
+
+        def fake_runner(_query, _days):
+            return {
+                "source_id": "fake",
+                "source_name": "Fake source",
+                "status": "ok",
+                "raw_jobs_count": 1,
+                "jobs": [job],
+                "cache_used": False,
+            }
+
+        with patch.dict(opportunity.SOURCE_RUNNERS, {"fake": ("Fake source", fake_runner)}, clear=True):
+            report = opportunity.search_jobs(
+                "data entry", location="Nigeria", remote_only=True, sources=["fake"]
+            )
+
+        self.assertEqual(report["results_count"], 1)
+        self.assertEqual(report["results"][0]["relevance_score"], 35)
+        self.assertIn("review", report["results"][0]["match_reason"])
+        self.assertEqual(report["results"][0]["location_eligibility"],
+                         "Not specified by source; check the original listing")
+
+    def test_data_entry_synonym_variants_are_broad(self):
+        variants = opportunity._query_variants("data entry")
+        for expected in (
+            "data entry keyer", "data encoder", "data capture",
+            "data transcriber", "records clerk", "document processing clerk",
+        ):
+            self.assertIn(expected, variants)
+
+    def test_cross_source_duplicate_with_different_location_is_merged(self):
+        base = {
+            "title": "Data Entry Clerk",
+            "company": "Example Ltd",
+            "location": "Remote",
+            "job_url": "https://example.com/jobs/one",
+            "description": "Enter and verify records accurately.",
+            "summary": "Enter and verify records accurately.",
+            "source_links": [{"source": "A", "url": "https://example.com/jobs/one"}],
+            "tags": [],
+            "salary_min": None,
+            "salary_max": None,
+            "salary_currency": None,
+            "salary_period": None,
+            "employment_type": None,
+            "seniority": None,
+            "published_at": "2026-10-17T12:00:00Z",
+            "source_id": "source-a",
+        }
+        second = {
+            **base,
+            "location": "Remote | Worldwide",
+            "job_url": "https://remotejobs.org/remote-jobs/example-role",
+            "source_id": "source-b",
+            "source_name": "Source B",
+            "source_links": [{"source": "B", "url": "https://remotejobs.org/remote-jobs/example-role"}],
+        }
+        jobs, removed = opportunity._dedupe([base, second])
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(removed, 1)
+        self.assertEqual(len(jobs[0]["source_links"]), 2)
+        self.assertIn("Remote | Worldwide", jobs[0]["alternate_locations"])
+
+    def test_unknown_country_eligibility_is_not_excluded(self):
+        self.assertEqual(
+            opportunity._location_compatibility(
+                {"location": "Remote / country eligibility not specified"}, "Nigeria"
+            ),
+            "unknown",
+        )
 
 
 if __name__ == "__main__":
