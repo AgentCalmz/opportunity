@@ -1,6 +1,11 @@
-node_modules/
+__pycache__/
+*.py[cod]
+*.egg-info/
 dist/
-.opportunity-cache/
+build/
+.venv/
+venv/
 .env
+.opportunity-cache/
 *.log
-coverage/
+.coverage
