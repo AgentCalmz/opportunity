@@ -1,0 +1,98 @@
+name: Refresh listings & deploy website
+
+on:
+  push:
+    branches:
+      - main
+      - feature/pitchable-github-pages-site
+    paths:
+      - "opportunity.py"
+      - "tests/**"
+      - "site/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: opportunity-pages-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Compile Python source
+        run: python -m py_compile opportunity.py tests/test_opportunity.py
+
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Refresh latest job snapshot
+        run: |
+          mkdir -p site/data
+          python opportunity.py --days 14 --max-results 5000 --out site/data/jobs.json
+
+      - name: Validate snapshot and website assets
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          required = [
+              Path("site/index.html"),
+              Path("site/assets/styles.css"),
+              Path("site/assets/app.js"),
+              Path("site/assets/favicon.svg"),
+              Path("site/data/jobs.json"),
+          ]
+          missing = [str(path) for path in required if not path.is_file()]
+          if missing:
+              raise SystemExit("Missing site files: " + ", ".join(missing))
+
+          report = json.loads(Path("site/data/jobs.json").read_text(encoding="utf-8"))
+          if not isinstance(report.get("results"), list):
+              raise SystemExit("Snapshot does not contain a results list")
+          if not isinstance(report.get("sources"), list):
+              raise SystemExit("Snapshot does not contain a sources list")
+          if report.get("audit", {}).get("source_errors", 0) >= len(report.get("sources", [])):
+              raise SystemExit("All source feeds failed; keeping the previous deployment")
+          print(f"Snapshot validated: {len(report['results'])} jobs across {len(report['sources'])} feeds")
+
+          html = Path("site/index.html").read_text(encoding="utf-8")
+          js = Path("site/assets/app.js").read_text(encoding="utf-8")
+          for asset in ("./assets/styles.css", "./assets/app.js", "./assets/favicon.svg"):
+              if asset not in html:
+                  raise SystemExit("Missing static asset reference: " + asset)
+          if './data/jobs.json' not in js:
+              raise SystemExit("Frontend does not request the snapshot JSON")
+          PY
+          node --check site/assets/app.js
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
