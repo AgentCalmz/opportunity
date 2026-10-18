@@ -1013,19 +1013,18 @@ def _matches_query(job: dict[str, Any], query: str) -> bool:
     return score >= 45
 
 
-def _matches_location(job: dict[str, Any], location: str | None) -> bool:
+def _location_compatibility(job: dict[str, Any], location: str | None) -> str:
+    """Return match, unknown, or mismatch; never discard a generic remote listing for missing eligibility."""
     if not location:
-        return True
+        return "match"
     wanted = normalize_text(location)
     listed = normalize_text(job.get("location", ""))
     if wanted in listed:
-        return True
+        return "match"
     if any(word in listed for word in (
         "worldwide", "anywhere", "global", "all countries", "no country restriction"
     )):
-        return True
-    # A region-wide remote role is normally eligible in member countries unless the source
-    # explicitly restricts it further. Use only obvious region mappings, not guesses.
+        return "match"
     country_regions = {
         "nigeria": ("africa",), "ghana": ("africa",), "kenya": ("africa",),
         "south africa": ("africa",), "uganda": ("africa",), "rwanda": ("africa",),
@@ -1034,7 +1033,25 @@ def _matches_location(job: dict[str, Any], location: str | None) -> bool:
         "india": ("asia",), "philippines": ("asia",), "singapore": ("asia",),
         "australia": ("oceania",), "new zealand": ("oceania",),
     }
-    return any(region in listed for region in country_regions.get(wanted, ()))
+    if any(region in listed for region in country_regions.get(wanted, ())):
+        return "match"
+
+    # Clearly country-restricted listings that don't include the requested country are excluded.
+    country_markers = (
+        "united states", "usa", "canada", "united kingdom", "uk", "europe",
+        "india", "philippines", "australia", "new zealand", "germany", "france",
+        "ireland", "singapore", "south africa", "nigeria", "ghana", "kenya",
+        "mexico", "brazil", "latin america", "asia", "north america",
+    )
+    stated_places = [marker for marker in country_markers if marker in listed]
+    if stated_places:
+        return "mismatch"
+    return "unknown"
+
+
+def _matches_location(job: dict[str, Any], location: str | None) -> bool:
+    """Compatibility helper; unknown remote eligibility is kept for manual review."""
+    return _location_compatibility(job, location) != "mismatch"
 
 
 def _date_filter(job: dict[str, Any], cutoff: datetime | None) -> bool | None:
@@ -1171,12 +1188,14 @@ def search_jobs(
     excluded_date = excluded_unknown_date = excluded_location = excluded_nonremote = 0
     excluded_by_relevance = 0
     relevance_matches = 0
+    unknown_location_eligibility = 0
 
     for source in source_reports:
         for original_job in source.get("jobs", []):
             score, reason = _query_relevance(original_job, query)
-            # Retain weak description-only mentions for review, but not as normal matches.
-            if score < 30:
+            # Recall-first: keep broad exact-phrase/body matches with a low score.
+            # Only exclude records that contain neither the query nor a recognized title synonym.
+            if score < 20:
                 excluded_by_relevance += 1
                 continue
 
@@ -1188,9 +1207,14 @@ def search_jobs(
             if not keep_date:
                 excluded_date += 1
                 continue
-            if not _matches_location(original_job, location):
+
+            location_status = _location_compatibility(original_job, location)
+            if location_status == "mismatch":
                 excluded_location += 1
                 continue
+            if location_status == "unknown":
+                unknown_location_eligibility += 1
+
             if remote_only and original_job.get("remote_status") in ("onsite", "hybrid"):
                 excluded_nonremote += 1
                 continue
@@ -1198,6 +1222,10 @@ def search_jobs(
             job = dict(original_job)
             job["relevance_score"] = score
             job["match_reason"] = reason
+            if location_status == "unknown":
+                job["location_eligibility"] = "Not specified by source; check the original listing"
+            elif location and location_status == "match":
+                job["location_eligibility"] = f"Matches or appears eligible for {location}"
             candidates.append(job)
 
     deduped, duplicates_removed = _dedupe(candidates)
@@ -1208,10 +1236,10 @@ def search_jobs(
         ),
         reverse=True,
     )
-    strong_matches = [job for job in deduped if int(job.get("relevance_score", 0)) >= 45]
-    near_matches = [job for job in deduped if 30 <= int(job.get("relevance_score", 0)) < 45]
-    results = strong_matches[:max_results]
-    near_matches = near_matches[:min(20, max_results)]
+    results = deduped[:max_results]
+    strong_matches_count = sum(1 for job in deduped if int(job.get("relevance_score", 0)) >= 75)
+    broader_matches_count = len(deduped) - strong_matches_count
+    near_matches = [job for job in deduped if int(job.get("relevance_score", 0)) < 75][:min(20, max_results)]
 
     timeframe_label = (
         f"last {days} day(s)" if days is not None
