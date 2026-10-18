@@ -104,6 +104,54 @@ class OpportunityUtilityTests(unittest.TestCase):
         self.assertIsNotNone(job)
         self.assertEqual(job["employment_type"], "Contract")
 
+    def test_query_relevance_rejects_unrelated_role_with_scattered_keywords(self):
+        job = {
+            "title": "Senior Staff Software Engineer",
+            "company": "Example Fintech",
+            "location": "Remote",
+            "description": "Build integrations for customers. Work with data systems. Maintain the entry pipeline for financial products.",
+            "summary": "Build integrations for customers and maintain production systems.",
+            "employment_type": "Full-Time",
+            "seniority": "Senior",
+            "tags": ["Software Engineering"],
+        }
+        score, reason = opportunity._query_relevance(job, "data entry")
+        self.assertEqual(score, 20)
+        self.assertIn("scattered", reason)
+        self.assertFalse(opportunity._matches_query(job, "data entry"))
+
+    def test_exact_title_phrase_is_a_strong_match(self):
+        job = {
+            "title": "Data Entry Clerk",
+            "company": "Example Ltd",
+            "location": "Remote",
+            "description": "Enter records accurately.",
+            "summary": "Enter records accurately.",
+            "employment_type": None,
+            "seniority": None,
+            "tags": [],
+        }
+        score, reason = opportunity._query_relevance(job, "data entry")
+        self.assertEqual(score, 100)
+        self.assertIn("title", reason)
+        self.assertTrue(opportunity._matches_query(job, "data entry"))
+
+    def test_description_only_exact_phrase_is_review_not_strong_match(self):
+        job = {
+            "title": "Operations Associate",
+            "company": "Example Ltd",
+            "location": "Remote",
+            "description": "The team performs occasional data entry alongside many other duties.",
+            "summary": "Help the operations team coordinate workflows.",
+            "employment_type": None,
+            "seniority": None,
+            "tags": [],
+        }
+        score, reason = opportunity._query_relevance(job, "data entry")
+        self.assertEqual(score, 35)
+        self.assertIn("review", reason)
+        self.assertFalse(opportunity._matches_query(job, "data entry"))
+
 
 if __name__ == "__main__":
     unittest.main()
