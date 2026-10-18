@@ -16,6 +16,20 @@
   let snapshot = null;
   let allJobs = [];
   let toastTimer = null;
+  let visibleCount = 15;
+  let savedOnly = false;
+  const storageKey = "opportunity-saved-jobs-v1";
+  let savedIds = new Set();
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(storageKey) || "[]");
+    if (Array.isArray(stored)) savedIds = new Set(stored.filter((value) => typeof value === "string"));
+  } catch (_) {
+    // Saving is a convenience; search still works if browser storage is disabled.
+  }
+
+  const getJobId = (job) => String(job.job_url || job.apply_url || job.url || [
+    job.company || "", job.title || "", job.location || ""
+  ].join("|"));
 
   const escapeHtml = (value) => String(value == null ? "" : value)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -147,6 +161,7 @@
     let jobs = allJobs.map((job) => ({ job, score: queryScore(job, query) }));
     jobs = jobs.filter(({ job, score }) => {
       if (query && score <= 0) return false;
+      if (savedOnly && !savedIds.has(getJobId(job))) return false;
       if (!locationFits(job, location)) return false;
       if (!ageFits(job, days)) return false;
       if (mode !== "any" && displayMode(job) !== mode) return false;
@@ -169,6 +184,9 @@
     const mode = displayMode(job);
     const date = getDate(job);
     const source = escapeHtml(job.source_name || job.source_id || "Source not specified");
+    const savedId = getJobId(job);
+    const isSaved = savedIds.has(savedId);
+    const saveButton = '<button type="button" class="save-button' + (isSaved ? ' saved' : '') + '" data-save-id="' + escapeHtml(savedId) + '" aria-pressed="' + (isSaved ? 'true' : 'false') + '" title="' + (isSaved ? 'Remove from saved jobs' : 'Save this job') + '"><span>' + (isSaved ? '♥' : '♡') + '</span><span>' + (isSaved ? 'Saved' : 'Save') + '</span></button>';
     const summary = String(job.summary || job.description || "Open the original listing to review the responsibilities and requirements.").replace(/\s+/g, " ").trim();
     const excerpt = escapeHtml(summary.length > 310 ? summary.slice(0, 307) + "…" : summary);
     const salary = salaryLabel(job);
@@ -190,7 +208,7 @@
       '<p class="job-description">' + excerpt + '</p>' +
       '<div class="job-facts"><span class="job-fact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>' + shownLocation + '</span>' + salaryFact + employmentFact + '</div>' +
       tagsHtml +
-      '<div class="job-actions"><span class="source-label"><span class="source-favicon">' + escapeHtml(firstInitials(job.source_name || job.source_id)) + '</span>' + source + '</span><div class="job-action-links">' + applyLink + '</div></div>' +
+      '<div class="job-actions"><span class="source-label"><span class="source-favicon">' + escapeHtml(firstInitials(job.source_name || job.source_id)) + '</span>' + source + '</span><div class="job-action-links">' + saveButton + applyLink + '</div></div>' +
       '</article>';
   };
 
@@ -206,16 +224,45 @@
     $("#reset-filters").addEventListener("click", resetFilters);
   };
 
-  const renderJobs = () => {
+  const renderJobs = (resetPage) => {
+    if (resetPage) visibleCount = 15;
     const query = queryInput.value.trim();
     const items = filterJobs();
     $("#results-count").textContent = items.length.toLocaleString();
+    $("#saved-count").textContent = String(savedIds.size);
+    $("#saved-filter").classList.toggle("active", savedOnly);
+    $("#saved-filter").setAttribute("aria-pressed", savedOnly ? "true" : "false");
+    $("#export-button").disabled = items.length === 0;
     $("#results-heading").textContent = query ? 'Results for "' + (query.length > 37 ? query.slice(0, 34) + "…" : query) + '"' : "Latest listings";
     $("#results-subheading").textContent = items.length + " listing" + (items.length === 1 ? "" : "s") + " match your current filters";
     $("#metric-listings").textContent = allJobs.length.toLocaleString();
     clearQuery.classList.toggle("visible", Boolean(queryInput.value));
     if (!items.length) return showEmpty(query);
-    resultsRoot.innerHTML = items.map(jobCard).join("");
+    const visible = items.slice(0, visibleCount);
+    resultsRoot.innerHTML = visible.map(jobCard).join("") +
+      (items.length > visible.length
+        ? '<div class="load-more-wrap"><button type="button" class="load-more-button" id="load-more">Load more listings <span>+' + Math.min(15, items.length - visible.length) + '</span></button></div>'
+        : '');
+
+    resultsRoot.querySelectorAll(".save-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        const id = button.dataset.saveId;
+        if (savedIds.has(id)) {
+          savedIds.delete(id);
+          showToastMessage("Removed from saved jobs.");
+        } else {
+          savedIds.add(id);
+          showToastMessage("Job saved in this browser.");
+        }
+        try { window.localStorage.setItem(storageKey, JSON.stringify(Array.from(savedIds))); } catch (_) {}
+        renderJobs(false);
+      });
+    });
+    const loadMore = $("#load-more");
+    if (loadMore) loadMore.addEventListener("click", () => {
+      visibleCount += 15;
+      renderJobs(false);
+    });
   };
 
   const renderSources = () => {
@@ -255,6 +302,39 @@
     $("#updated-time").textContent = formatExactDate(date);
   };
 
+  const exportCsv = () => {
+    const rows = filterJobs().map(({ job }) => job);
+    if (!rows.length) {
+      showToastMessage("There are no current results to export.");
+      return;
+    }
+    const columns = [
+      ["title", "Job title"], ["company", "Company"], ["location", "Location"],
+      ["remote_status", "Work mode"], ["published_at", "Published"],
+      ["employment_type", "Employment type"], ["seniority", "Seniority"],
+      ["salary_min", "Salary minimum"], ["salary_max", "Salary maximum"],
+      ["salary_currency", "Currency"], ["salary_period", "Salary period"],
+      ["job_url", "Listing URL"], ["apply_url", "Application URL"], ["source_name", "Source"]
+    ];
+    const csvCell = (value) => {
+      const text = value == null ? "" : Array.isArray(value) ? value.join("; ") : String(value);
+      return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const csv = [columns.map((column) => csvCell(column[1])).join(",")]
+      .concat(rows.map((job) => columns.map((column) => csvCell(job[column[0]])).join(",")))
+      .join("\r\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "opportunity-results-" + new Date().toISOString().slice(0, 10) + ".csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    showToastMessage(rows.length + " listing(s) exported to CSV.");
+  };
+
   const loadSnapshot = async (showToastOnSuccess) => {
     refreshButton.disabled = true;
     refreshButton.classList.add("spinning");
@@ -267,7 +347,7 @@
       allJobs = Array.isArray(snapshot.results) ? snapshot.results : [];
       renderFreshness();
       renderSources();
-      renderJobs();
+      renderJobs(true);
       if (showToastOnSuccess) showToastMessage("Snapshot reloaded.");
     } catch (error) {
       resultsRoot.innerHTML = '<div class="error-state"><div class="empty-symbol">!</div><h3>Could not load the job snapshot</h3><p>Check your connection and confirm the collection workflow has generated site/data/jobs.json.</p><button type="button" id="retry-load">Try again</button></div>';
@@ -294,29 +374,32 @@
     modeFilter.value = "any";
     sortFilter.value = "newest";
     document.querySelectorAll(".quick-chip").forEach((chip) => chip.classList.remove("active"));
-    renderJobs();
+    savedOnly = false;
+    renderJobs(true);
     showToastMessage("Filters cleared.");
   };
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    renderJobs();
+    renderJobs(true);
     $("#results-heading").scrollIntoView({ behavior: "smooth", block: "center" });
   });
   queryInput.addEventListener("input", () => {
     clearQuery.classList.toggle("visible", Boolean(queryInput.value));
     document.querySelectorAll(".quick-chip").forEach((chip) => chip.classList.toggle("active", normalized(chip.dataset.query) === normalized(queryInput.value)));
-    renderJobs();
+    renderJobs(true);
   });
-  queryInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); renderJobs(); } });
-  clearQuery.addEventListener("click", () => { queryInput.value = ""; renderJobs(); queryInput.focus(); document.querySelectorAll(".quick-chip").forEach((chip) => chip.classList.remove("active")); });
+  queryInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); renderJobs(true); } });
+  clearQuery.addEventListener("click", () => { queryInput.value = ""; renderJobs(true); queryInput.focus(); document.querySelectorAll(".quick-chip").forEach((chip) => chip.classList.remove("active")); });
   document.querySelectorAll(".quick-chip").forEach((chip) => chip.addEventListener("click", () => {
     queryInput.value = chip.dataset.query || "";
     document.querySelectorAll(".quick-chip").forEach((item) => item.classList.toggle("active", item === chip));
-    renderJobs();
+    renderJobs(true);
     $("#results-heading").scrollIntoView({ behavior: "smooth", block: "center" });
   }));
-  [locationInput, timeFilter, modeFilter, sortFilter].forEach((element) => element.addEventListener("change", renderJobs));
+  [locationInput, timeFilter, modeFilter, sortFilter].forEach((element) => element.addEventListener("change", () => renderJobs(true)));
+  $("#saved-filter").addEventListener("click", () => { savedOnly = !savedOnly; renderJobs(true); });
+  $("#export-button").addEventListener("click", exportCsv);
   refreshButton.addEventListener("click", () => loadSnapshot(true));
 
   loadSnapshot(false);
