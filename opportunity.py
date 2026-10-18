@@ -763,6 +763,7 @@ def _remotejobs_job(raw: Any) -> dict[str, Any] | None:
     if isinstance(location_info, dict):
         scope = str(location_info.get("scope") or "").casefold()
         allowed = location_info.get("allowed_countries") or []
+        excluded = location_info.get("excluded_countries") or []
         country_names = {
             "NG": "Nigeria", "US": "United States", "GB": "United Kingdom",
             "CA": "Canada", "AU": "Australia", "IN": "India", "ZA": "South Africa",
@@ -770,11 +771,20 @@ def _remotejobs_job(raw: Any) -> dict[str, Any] | None:
             "FR": "France", "IE": "Ireland", "NZ": "New Zealand", "BR": "Brazil",
             "MX": "Mexico", "PT": "Portugal", "ES": "Spain", "NL": "Netherlands",
         }
+        readable_allowed = [
+            country_names.get(str(code).upper(), str(code))
+            for code in allowed if code
+        ] if isinstance(allowed, list) else []
+        readable_excluded = [
+            country_names.get(str(code).upper(), str(code))
+            for code in excluded if code
+        ] if isinstance(excluded, list) else []
         if scope == "worldwide":
             location += " | Worldwide"
-        elif isinstance(allowed, list) and allowed:
-            readable = [country_names.get(str(code).upper(), str(code)) for code in allowed]
-            location += " | Eligible countries: " + ", ".join(readable)
+        elif readable_allowed:
+            location += " | Eligible countries: " + ", ".join(readable_allowed)
+        if readable_excluded:
+            location += " | Excluded countries: " + ", ".join(readable_excluded)
         regions = location_info.get("regions") or []
         if isinstance(regions, list) and regions:
             location += " | Regions: " + ", ".join(str(region) for region in regions)
@@ -795,6 +805,10 @@ def _remotejobs_job(raw: Any) -> dict[str, Any] | None:
         job["company_profile_url"] = company.get("url") if isinstance(company, dict) else None
         job["category"] = category_name
         job["direct_apply"] = raw.get("direct_apply")
+        if isinstance(location_info, dict):
+            job["location_scope"] = location_info.get("scope")
+            job["eligible_countries"] = readable_allowed if isinstance(location_info.get("allowed_countries"), list) else []
+            job["excluded_countries"] = readable_excluded if isinstance(location_info.get("excluded_countries"), list) else []
     return job
 
 
@@ -1128,6 +1142,12 @@ def _location_compatibility(job: dict[str, Any], location: str | None) -> str:
         return "match"
     wanted = normalize_text(location)
     listed = normalize_text(job.get("location", ""))
+    excluded_countries = [normalize_text(value) for value in _string_list(job.get("excluded_countries", []))]
+    eligible_countries = [normalize_text(value) for value in _string_list(job.get("eligible_countries", []))]
+    if wanted in excluded_countries:
+        return "mismatch"
+    if eligible_countries:
+        return "match" if wanted in eligible_countries else "mismatch"
     if wanted in listed:
         return "match"
     if any(word in listed for word in (
