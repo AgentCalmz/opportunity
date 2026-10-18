@@ -1370,7 +1370,10 @@ def search_jobs(
         "results": results,
         "strong_matches_count": sum(1 for job in results if int(job.get("relevance_score", 0)) >= 75),
         "broader_matches_count": sum(1 for job in results if int(job.get("relevance_score", 0)) < 75),
-        "location_eligibility_unknown_count": unknown_location_eligibility,
+        "location_eligibility_unknown_count": sum(
+            1 for job in results
+            if job.get("location_eligibility") == "Not specified by source; check the original listing"
+        ),
         "near_matches_count": len(near_matches),
         "near_matches": near_matches,
         "audit": {
@@ -1423,6 +1426,8 @@ def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> No
             print(f'   Match type: {kind}')
             print(f'   Relevance: {score}/100 — {job.get("match_reason", "keyword match")}')
         print(f'   Location: {job["location"]} | Work mode: {job["remote_status"]}')
+        if job.get("alternate_locations"):
+            print("   Other reported locations: " + " | ".join(job["alternate_locations"]))
         if job.get("location_eligibility"):
             print(f'   Location eligibility: {job["location_eligibility"]}')
         print(f'   Published: {job["published_at"] or "Not supplied by source"}')
