@@ -553,31 +553,54 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
         jobs: list[dict[str, Any]] = []
         cache_used = True
         stale = False
-        pages = 0
+        requests_made = 0
+        pages_read = 0
         partial = False
-        for page in range(1, MAX_SOURCE_PAGES + 1):
-            params = {"q": query, "sort": "recent", "page": str(page)}
-            url = "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode(params)
-            headers: dict[str, str] = {}
-            api_key = os.getenv("HIMALAYAS_API_KEY", "").strip()
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            data, meta = _request_json(url, ttl_seconds=DAY, headers=headers)
-            cache_used = cache_used and bool(meta.get("cache_used"))
-            stale = stale or bool(meta.get("cache_stale"))
-            pages += 1
-            raw_jobs = data.get("jobs", []) if isinstance(data, dict) else []
-            if not isinstance(raw_jobs, list) or not raw_jobs:
+        budget_exhausted = False
+        variants = _query_variants(query)
+        page_limit = min(MAX_SOURCE_PAGES, 5)
+        request_budget = max(1, min(int(os.getenv("OPPORTUNITY_HIMALAYAS_MAX_REQUESTS", "20")), 50))
+
+        for variant_index, variant in enumerate(variants):
+            for page in range(1, page_limit + 1):
+                if requests_made >= request_budget:
+                    partial = True
+                    budget_exhausted = True
+                    break
+                params = {"q": variant, "sort": "recent", "page": str(page)}
+                url = "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode(params)
+                headers: dict[str, str] = {}
+                api_key = os.getenv("HIMALAYAS_API_KEY", "").strip()
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                data, meta = _request_json(url, ttl_seconds=DAY, headers=headers)
+                requests_made += 1
+                cache_used = cache_used and bool(meta.get("cache_used"))
+                stale = stale or bool(meta.get("cache_stale"))
+                pages_read += 1
+                raw_jobs = data.get("jobs", []) if isinstance(data, dict) else []
+                if not isinstance(raw_jobs, list) or not raw_jobs:
+                    break
+                jobs.extend(job for raw in raw_jobs if (job := _himalayas_job(raw)))
+                if len(raw_jobs) < 20:
+                    break
+                if page == page_limit:
+                    partial = True
+            if budget_exhausted:
                 break
-            jobs.extend(job for raw in raw_jobs if (job := _himalayas_job(raw)))
-            if len(raw_jobs) < 20:
-                break
-            if page == MAX_SOURCE_PAGES:
-                partial = True
+
         meta_summary = {"cache_used": cache_used, "cache_stale": stale}
-        message = f"Read {pages} page(s) from Himalayas search."
-        if partial:
-            message += f" Page cap ({MAX_SOURCE_PAGES}) reached; results may be incomplete."
+        message = (
+            f"Queried {len(variants)} role-title phrase(s); read {pages_read} page(s) "
+            f"using {requests_made} API request(s)."
+        )
+        if budget_exhausted:
+            message += (
+                f" Request budget ({request_budget}) reached before every phrase/page was checked. "
+                "Increase OPPORTUNITY_HIMALAYAS_MAX_REQUESTS cautiously if desired."
+            )
+        elif partial:
+            message += f" Page cap ({page_limit} per phrase) reached; increase OPPORTUNITY_MAX_PAGES cautiously if desired."
         return _result(
             source_id, source_name, jobs, meta_summary,
             status="partial" if partial else "ok", message=message
