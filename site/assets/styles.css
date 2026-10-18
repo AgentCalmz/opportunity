@@ -58,7 +58,9 @@ h1 { margin: 22px 0 20px; font: 600 clamp(45px,5.25vw,70px)/1.03 'Space Grotesk'
 .hero-jump { display: inline-flex; gap: 15px; align-items: center; margin-top: 29px; padding-bottom: 6px; color: var(--lime); border-bottom: 1px solid rgba(200,241,105,.4); font-size: 12px; font-weight: 700; }
 .hero-jump span { font-size: 18px; transition: transform .2s; }
 .hero-jump:hover span { transform: translate(3px,3px); }
-.hero-art { min-height: 347px; position: relative; display: flex; justify-content: center; align-items: center; isolation: isolate; }
+.hero-art { min-height: 347px; position: relative; display: flex; justify-content: center; align-items: center; isolation: isolate; border-radius: 28px; overflow: hidden; background: linear-gradient(135deg, rgba(10,17,14,.50), rgba(10,17,14,.92)), url("https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1400&q=85") center/cover; box-shadow: 0 26px 80px rgba(0,0,0,.22); }
+.hero-art::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(ellipse at 68% 26%, rgba(200,241,105,.18), transparent 48%), linear-gradient(180deg, rgba(11,15,14,.05), rgba(11,15,14,.55)); pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) { .hero-art { animation: hero-arrive .7s ease-out both; } @keyframes hero-arrive { from { opacity: .65; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } } }
 .art-glow { position: absolute; width: 290px; height: 290px; border-radius: 50%; background: rgba(177,229,87,.1); filter: blur(65px); z-index: -1; }
 .orbit { position: absolute; border: 1px solid rgba(194,236,144,.12); border-radius: 50%; transform: rotate(-25deg); }
 .orbit-one { width: 430px; height: 225px; }
