@@ -121,7 +121,7 @@ def strip_html(value: Any) -> str:
     text = re.sub(r"(?i)<\s*br\s*/?\s*>", "\n", text)
     text = re.sub(r"(?i)</\s*(p|div|li|h[1-6]|section|tr)\s*>", "\n", text)
     text = re.sub(r"<[^>]+>", " ", text)
-    text = html.unescape(text)
+    text = html.unescape(text).replace("\xa0", " ")
     text = re.sub(r"[ \t\f\v]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
