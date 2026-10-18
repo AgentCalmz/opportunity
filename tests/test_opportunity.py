@@ -189,6 +189,35 @@ class OpportunityUtilityTests(unittest.TestCase):
         runner = opportunity.SOURCE_RUNNERS["remotejobsorg"][1]
         inspect.signature(runner).bind("data entry", 5)
 
+    def test_location_filter_accepts_country_from_explicit_region_scope(self):
+        job = {"location": "Remote | Regions: Africa"}
+        self.assertTrue(opportunity._matches_location(job, "Nigeria"))
+
+    def test_remotejobs_mapping_keeps_allowed_country_eligibility(self):
+        job = opportunity._remotejobs_job({
+            "id": "test-job",
+            "title": "Data Entry Clerk",
+            "company": {"name": "Example Ltd"},
+            "url": "https://remotejobs.org/remote-jobs/test-job",
+            "apply_url": "https://remotejobs.org/remote-jobs/test-job",
+            "location": "Remote",
+            "location_normalization": {
+                "scope": "country",
+                "work_arrangement": "remote",
+                "allowed_countries": ["NG"],
+                "regions": [],
+            },
+            "description": "Enter records accurately.",
+            "posted_at": "2026-10-17T12:00:00Z",
+            "type": "Full-time",
+            "category": {"name": "General", "slug": "general"},
+            "salary_min": None,
+            "salary_max": None,
+        })
+        self.assertIsNotNone(job)
+        self.assertIn("Nigeria", job["location"])
+        self.assertTrue(opportunity._matches_location(job, "Nigeria"))
+
 
 if __name__ == "__main__":
     unittest.main()
