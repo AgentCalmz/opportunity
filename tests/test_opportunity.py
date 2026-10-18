@@ -254,6 +254,65 @@ class OpportunityUtilityTests(unittest.TestCase):
         self.assertEqual(report["results"][0]["location_eligibility"],
                          "Not specified by source; check the original listing")
 
+    def test_work_mode_filter_is_optional_and_remote_only_is_opt_in(self):
+        jobs = [
+            {
+                "title": "Data Entry Clerk",
+                "company": "Remote Example",
+                "job_url": "https://example.com/jobs/remote",
+                "location": "Remote",
+                "remote_status": "remote",
+                "published_at": None,
+                "summary": "Enter data into records.",
+                "description": "Enter data into records.",
+                "tags": [],
+            },
+            {
+                "title": "Data Entry Clerk",
+                "company": "Hybrid Example",
+                "job_url": "https://example.com/jobs/hybrid",
+                "location": "Hybrid",
+                "remote_status": "hybrid",
+                "published_at": None,
+                "summary": "Enter data into records.",
+                "description": "Enter data into records.",
+                "tags": [],
+            },
+            {
+                "title": "Data Entry Clerk",
+                "company": "Onsite Example",
+                "job_url": "https://example.com/jobs/onsite",
+                "location": "Office",
+                "remote_status": "onsite",
+                "published_at": None,
+                "summary": "Enter data into records.",
+                "description": "Enter data into records.",
+                "tags": [],
+            },
+        ]
+
+        def fake_runner(_query, _days):
+            return {
+                "source_id": "fake",
+                "source_name": "Fake source",
+                "status": "ok",
+                "raw_jobs_count": len(jobs),
+                "jobs": jobs,
+                "cache_used": False,
+            }
+
+        with patch.dict(opportunity.SOURCE_RUNNERS, {"fake": ("Fake source", fake_runner)}, clear=True):
+            all_modes_report = opportunity.search_jobs("data entry", sources=["fake"])
+            remote_only_report = opportunity.search_jobs(
+                "data entry", remote_only=True, sources=["fake"]
+            )
+
+        self.assertFalse(all_modes_report["remote_only"])
+        self.assertEqual(all_modes_report["results_count"], 3)
+        self.assertTrue(remote_only_report["remote_only"])
+        self.assertEqual(remote_only_report["results_count"], 1)
+        self.assertEqual(remote_only_report["results"][0]["company"], "Remote Example")
+
     def test_data_entry_synonym_variants_are_broad(self):
         variants = opportunity._query_variants("data entry")
         for expected in (
