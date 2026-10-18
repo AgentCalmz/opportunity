@@ -1,3 +1,4 @@
+import inspect
 import unittest
 from datetime import datetime, timezone
 
@@ -83,6 +84,25 @@ class OpportunityUtilityTests(unittest.TestCase):
         self.assertEqual(job["description"], "Full description")
         self.assertEqual(job["published_at"], "2026-10-12T12:00:00Z")
         self.assertEqual(job["job_url"], "https://example.com/jobs/123")
+
+    def test_all_source_adapters_accept_common_call_signature(self):
+        # search_jobs invokes each adapter as runner(query, days). This regression
+        # test catches the Colab error where several adapters accepted fewer args.
+        for source_id, (_label, runner) in opportunity.SOURCE_RUNNERS.items():
+            with self.subTest(source=source_id):
+                inspect.signature(runner).bind("data entry", 5)
+
+    def test_list_employment_type_is_printable_text(self):
+        job = opportunity._make_job(
+            source_id="test",
+            source_name="Test source",
+            title="Data Entry",
+            company="Company",
+            url="https://example.com/jobs/124",
+            employment_type=["Contract"],
+        )
+        self.assertIsNotNone(job)
+        self.assertEqual(job["employment_type"], "Contract")
 
 
 if __name__ == "__main__":
