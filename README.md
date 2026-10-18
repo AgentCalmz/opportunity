@@ -79,7 +79,7 @@ Open `opportunity_colab.ipynb` in Colab, or run these cells in a new notebook:
 from opportunity import search_jobs, print_report
 
 # Latest available listings, no keyword filter, newest first:
-report = search_jobs("", days=None, location="Nigeria", remote_only=False)
+report = search_jobs("", days=None, location=None, remote_only=False)  # use location="Nigeria" to restrict eligibility
 
 # For keyword search instead, try:
 # report = search_jobs("data entry", days=5, location="Nigeria", remote_only=False)
