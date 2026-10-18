@@ -1,8 +1,8 @@
 # Opportunity
 
-A Python-first, local/Google Colab-friendly **multi-source job discovery tool**. Enter a phrase such as `data entry`; it queries several public job feeds (many of them remote-focused) and related job-title variants, normalizes the listings, applies optional publication-date, location, and work-mode filters, merges duplicates, and returns original job/application links plus descriptions, dates, salary fields when published, and source status.
+A Python-first, local/Google Colab-friendly **multi-source job discovery tool**. Enter a phrase such as `data entry` to search by keyword, or omit the phrase to browse latest available listings. It queries several public job feeds (many of them remote-focused) and related job-title variants, normalizes the listings, applies optional publication-date, location, and work-mode filters, merges duplicates, and returns original job/application links plus descriptions, dates, salary fields when published, and source status.
 
-> **Coverage honesty:** no public interface can guarantee every remote job on every platform. This project queries its configured sources and reports which ones succeeded, failed, used cached results, or hit a pagination cap. It does not claim a source was searched when it was not.
+> **Coverage honesty:** no public interface can guarantee every job on every platform. This project queries its configured sources and reports which ones succeeded, failed, used cached results, or hit a pagination cap. It does not claim a source was searched when it was not.
 
 ## Run on your PC
 
@@ -11,31 +11,60 @@ Requires Python 3.10+ (Python 3.11+ recommended). The core search uses only the 
 ```bash
 git clone https://github.com/AgentCalmz/opportunity.git
 cd opportunity
+# Search data-entry jobs posted in the last 5 days
 python opportunity.py "data entry" --days 5
+
+# Browse newest available listings without entering a keyword
+python opportunity.py
+
+# Browse listings from the last 5 days without a keyword
+python opportunity.py --days 5
 
 # Optional: exclude known onsite/hybrid listings and keep remote-only results
 python opportunity.py "data entry" --days 5 --remote-only
 ```
 
-Other examples:
+Other useful PC commands (run these from inside the `opportunity` folder):
 
 ```bash
-# All available dates from the sources' accessible feeds
-python opportunity.py "virtual assistant"
+# See every available option
+python opportunity.py --help
 
-# Last 14 days, jobs whose source says they are open in Nigeria or worldwide
-python opportunity.py "customer support" --days 14 --location Nigeria
+# Browse all recent jobs the feeds currently expose, newest first
+python opportunity.py
 
-# A fixed start date
+# Browse only the last 14 days of listings (no keyword needed)
+python opportunity.py --days 14
+
+# Find related jobs posted in the last 5 days in Nigeria; keep every work mode
+python opportunity.py "customer support" --days 5 --location Nigeria
+
+# Use a fixed start date
 python opportunity.py "data entry" --since 2026-10-01
 
-# Search one source only; repeat --source to select several
+# Search selected sources only; repeat --source for more sources
 python opportunity.py "data entry" --days 5 --source himalayas --source jobicy
 
-# Keep the complete results (including full description fields) in JSON
+# Save the full report (including full descriptions) to JSON
 python opportunity.py "data entry" --days 5 --out results.json
-python opportunity.py "data entry" --days 5 --json > results.json
+
+# Save a no-keyword latest-listings report to JSON
+python opportunity.py --out latest_results.json
+
+# Output JSON to a file through shell redirection
+python opportunity.py --json > latest_results.json
+
+# Run the unit tests
+python -m unittest discover -s tests -v
+
+# Compile-check the main code and tests
+python -m py_compile opportunity.py tests/test_opportunity.py
+
+# Pull the newest version from GitHub when updates are published
+git pull --ff-only origin main
 ```
+
+On Windows, use `py` instead of `python` if that is the command that works on your computer (for example, `py opportunity.py --help`). Run `git clone https://github.com/AgentCalmz/opportunity.git` only once; for later updates, first `cd opportunity` and then use `git pull --ff-only origin main`. To use the CLI you need Python 3.10+ and Git installed.
 
 Date filters use the listing's publication date. If the source does not give a parseable date, the listing is excluded when a timeframe is requested and counted in the audit instead of being falsely labelled recent. A date filter cannot retrieve older jobs if a provider does not retain them.
 
@@ -49,7 +78,11 @@ Open `opportunity_colab.ipynb` in Colab, or run these cells in a new notebook:
 
 from opportunity import search_jobs, print_report
 
-report = search_jobs("data entry", days=5, location="Nigeria", remote_only=False)  # include all work modes where available
+# Latest available listings, no keyword filter, newest first:
+report = search_jobs("", days=None, location="Nigeria", remote_only=False)
+
+# For keyword search instead, try:
+# report = search_jobs("data entry", days=5, location="Nigeria", remote_only=False)
 print_report(report)
 ```
 
@@ -111,6 +144,8 @@ Higher request budgets improve coverage but increase traffic. RemoteJobs.org exp
 ## Result fields
 
 Each result preserves the original listing URL and includes company, title, location/eligibility, publication date, work mode, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
+
+With an empty query, the tool skips keyword filtering and sorts returned listings by publication date, newest first. Use `days=None` to browse all dates that the configured feeds expose, or `days=5` to limit the results to the last 5 days. "Latest" means latest available from these feeds: source-specific retention periods, caches, pagination limits, and outages can affect coverage.
 
 Search is deliberately **recall-first**: it keeps exact keyword mentions and recognized job-title variants in the main results list and labels each result as a direct/close related match or a broader keyword hit. For `data entry`, variants include data entry clerk/operator/keyer, data encoder, data capture, data transcription/transcriber, records clerk/specialist, document indexing/processing, and data-processing roles. Several related titles are drawn from O*NET's published job-title examples for data-entry work: https://www.onetonline.org/link/summary/43-9021.00. Broader matches can include incidental mentions, so use the match reason and original listing to judge relevance rather than expecting the engine to hide every weak hit. Unknown country eligibility is retained for manual review instead of silently discarded.
 
