@@ -1054,7 +1054,7 @@ def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> No
     """Print a human-readable report while preserving all text in report['results']."""
     print(f'\nOPPORTUNITY SEARCH: "{report["query"]}"')
     print(f'Timeframe: {report["timeframe"]} | Remote only: {report["remote_only"]}')
-    print(f'Search took {report["elapsed_seconds"]}s; {report["results_count"]} matching job(s).')
+    print(f'Search took {report["elapsed_seconds"]}s; {report["results_count"]} strong match(es), {report.get("near_matches_count", 0)} review candidate(s).')
     print("\nSOURCE STATUS")
     for source in report["sources"]:
         suffix = " [cache]" if source.get("cache_used") else ""
@@ -1070,9 +1070,11 @@ def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> No
 
     print(f'\nMATCHES ({report["results_count"]})')
     if not report["results"]:
-        print("No jobs matched all selected filters in the accessible source results.")
+        print("No high-relevance jobs matched all selected filters in the accessible source results.")
     for index, job in enumerate(report["results"], start=1):
         print(f'\n{index}. {job["title"]} — {job["company"]}')
+        if job.get("relevance_score") is not None:
+            print(f'   Relevance: {job["relevance_score"]}/100 — {job.get("match_reason", "keyword match")}')
         print(f'   Location: {job["location"]} | Work mode: {job["remote_status"]}')
         print(f'   Published: {job["published_at"] or "Not supplied by source"}')
         if job.get("employment_type"):
@@ -1104,9 +1106,24 @@ def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> No
         for link in alternates:
             print(f'   Also found at {link.get("source")}: {link.get("url")}')
 
+    if report.get("near_matches"):
+        print(f'\nLOWER-CONFIDENCE REVIEW CANDIDATES ({report["near_matches_count"]})')
+        print("These matched only in a description or a weaker field; check relevance before applying.")
+        for index, job in enumerate(report["near_matches"], start=1):
+            print(f'\n{index}. {job["title"]} — {job["company"]}')
+            print(f'   Relevance: {job["relevance_score"]}/100 — {job.get("match_reason", "weak keyword match")}')
+            print(f'   Location: {job["location"]} | Published: {job.get("published_at") or "Not supplied"}')
+            if job.get("summary"):
+                print("   Summary: " + re.sub(r"\s+", " ", job["summary"])[:description_chars])
+            print(f'   Job link: {job["job_url"]}')
+            if job.get("apply_url") and job["apply_url"] != job["job_url"]:
+                print(f'   Apply link: {job["apply_url"]}')
+            print(f'   Source: {job["source_name"]}')
+
     print("\nSEARCH AUDIT")
     for key, label in [
         ("duplicates_removed", "Duplicate results merged"),
+        ("excluded_by_relevance", "Excluded as weak/incidental keyword mentions"),
         ("excluded_by_timeframe", "Excluded as too old"),
         ("excluded_unknown_publication_date", "Excluded because publication date is unknown"),
         ("excluded_by_location", "Excluded by location filter"),
