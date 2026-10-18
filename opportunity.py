@@ -767,18 +767,55 @@ SOURCE_RUNNERS: dict[str, tuple[str, Callable[..., dict[str, Any]]]] = {
 # Search, timeframe filters, deduplication, and report generation
 # ---------------------------------------------------------------------------
 
-def _matches_query(job: dict[str, Any], query: str) -> bool:
+def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
+    """Score relevance by field so incidental words in a long description aren't enough."""
     terms = normalize_text(query).split()
     if not terms:
-        return True
-    fields = [
-        job.get("title", ""), job.get("company", ""), job.get("location", ""),
-        job.get("description", ""), job.get("summary", ""),
-        job.get("employment_type", ""), job.get("seniority", ""),
-        " ".join(job.get("tags", [])),
-    ]
-    haystack = normalize_text(" ".join(str(v or "") for v in fields))
-    return all(term in haystack for term in terms)
+        return 100, "empty query"
+    phrase = " ".join(terms)
+    title = normalize_text(job.get("title", ""))
+    metadata = normalize_text(" ".join([
+        " ".join(_string_list(job.get("tags", []))),
+        str(job.get("employment_type") or ""),
+        str(job.get("seniority") or ""),
+    ]))
+    summary = normalize_text(job.get("summary", ""))
+    description = normalize_text(job.get("description", ""))
+
+    if len(terms) == 1:
+        if phrase in title:
+            return 100, "title keyword"
+        if phrase in metadata:
+            return 85, "skill/tag keyword"
+        if phrase in summary:
+            return 60, "summary keyword"
+        if phrase in description:
+            return 30, "description-only keyword; review"
+        return 0, "no useful keyword match"
+
+    if phrase in title:
+        return 100, "exact phrase in title"
+    if all(term in title for term in terms):
+        return 82, "all keywords in title"
+    if phrase in metadata:
+        return 90, "exact phrase in skills/tags"
+    if all(term in metadata for term in terms):
+        return 72, "all keywords in skills/tags"
+    if phrase in summary:
+        return 60, "exact phrase in summary"
+    if all(term in summary for term in terms):
+        return 50, "all keywords in summary"
+    if phrase in description:
+        return 35, "exact phrase only in full description; review"
+    if all(term in description for term in terms):
+        return 20, "keywords scattered in full description"
+    return 0, "no useful keyword match"
+
+
+def _matches_query(job: dict[str, Any], query: str) -> bool:
+    """Compatibility helper: True only for a reasonably relevant match."""
+    score, _reason = _query_relevance(job, query)
+    return score >= 45
 
 
 def _matches_location(job: dict[str, Any], location: str | None) -> bool:
@@ -814,6 +851,10 @@ def _dedupe(jobs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
             if link.get("url") not in seen_links:
                 existing.setdefault("source_links", []).append(link)
                 seen_links.add(link.get("url"))
+        # Keep the strongest keyword match when feeds describe one role differently.
+        if incoming.get("relevance_score", 0) > existing.get("relevance_score", 0):
+            existing["relevance_score"] = incoming["relevance_score"]
+            existing["match_reason"] = incoming.get("match_reason", "keyword match")
         # Preserve a richer description or useful fields from the duplicate.
         if len(incoming.get("description", "")) > len(existing.get("description", "")):
             existing["description"] = incoming["description"]
