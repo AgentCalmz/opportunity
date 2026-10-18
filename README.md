@@ -1,6 +1,6 @@
 # Opportunity
 
-A Python-first, local/Google Colab-friendly **multi-source job discovery tool**. Enter a phrase such as `data entry`; it queries several public remote-job feeds, normalizes the listings, applies an optional publication-date and location filter, merges duplicates, and returns original job/application links plus descriptions, dates, salary fields when published, and source status.
+A Python-first, local/Google Colab-friendly **multi-source job discovery tool**. Enter a phrase such as `data entry`; it queries several public remote-job feeds and related job-title variants, normalizes the listings, applies optional publication-date and location filters, merges duplicates, and returns original job/application links plus descriptions, dates, salary fields when published, and source status.
 
 > **Coverage honesty:** no public interface can guarantee every remote job on every platform. This project queries its configured sources and reports which ones succeeded, failed, used cached results, or hit a pagination cap. It does not claim a source was searched when it was not.
 
@@ -126,9 +126,9 @@ Optional environment variables:
 
 ## Result fields
 
-Each strong result preserves the original listing URL, and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
+Each result preserves the original listing URL and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
 
-Search is deliberately **recall-first**: it keeps exact keyword mentions and recognized job-title variants in the main results list and labels each result as a direct/close related match or a broader keyword hit. For `data entry`, variants include data entry clerk/operator/keyer, data encoder, data capture, data transcription/transcriber, records clerk/specialist, document indexing/processing, and data-processing roles. Broader matches can include incidental mentions, so use the match reason and original listing to judge relevance rather than expecting the engine to hide every weak hit. Unknown country eligibility is retained for manual review instead of silently discarded.
+Search is deliberately **recall-first**: it keeps exact keyword mentions and recognized job-title variants in the main results list and labels each result as a direct/close related match or a broader keyword hit. For `data entry`, variants include data entry clerk/operator/keyer, data encoder, data capture, data transcription/transcriber, records clerk/specialist, document indexing/processing, and data-processing roles. Several related titles are drawn from O*NET's published job-title examples for data-entry work: https://www.onetonline.org/link/summary/43-9021.00. Broader matches can include incidental mentions, so use the match reason and original listing to judge relevance rather than expecting the engine to hide every weak hit. Unknown country eligibility is retained for manual review instead of silently discarded.
 
 When duplicate listings appear on multiple platforms, the tool merges them and retains the alternate source links in `source_links`.
 
