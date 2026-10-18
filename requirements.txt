@@ -1,0 +1,2 @@
+# The search engine uses only Python's standard library.
+# Optional for table display in notebooks: pandas
