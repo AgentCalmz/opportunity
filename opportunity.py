@@ -681,6 +681,58 @@ def _fetch_remotive(query: str, days: int | None) -> dict[str, Any]:
         return _source_error(source_id, source_name, exc)
 
 
+def _remotejobs_job(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    company = raw.get("company")
+    company_name = company.get("name") if isinstance(company, dict) else company
+    category = raw.get("category")
+    category_name = category.get("name") if isinstance(category, dict) else category
+    tags = [category_name] if category_name else []
+    if isinstance(category, dict) and category.get("slug"):
+        tags.append(str(category["slug"]))
+
+    job_url = raw.get("url")
+    location = str(raw.get("location") or "Remote / eligibility not specified")
+    location_info = raw.get("location_normalization")
+    if isinstance(location_info, dict):
+        scope = str(location_info.get("scope") or "").casefold()
+        allowed = location_info.get("allowed_countries") or []
+        country_names = {
+            "NG": "Nigeria", "US": "United States", "GB": "United Kingdom",
+            "CA": "Canada", "AU": "Australia", "IN": "India", "ZA": "South Africa",
+            "KE": "Kenya", "GH": "Ghana", "PH": "Philippines", "DE": "Germany",
+            "FR": "France", "IE": "Ireland", "NZ": "New Zealand", "BR": "Brazil",
+            "MX": "Mexico", "PT": "Portugal", "ES": "Spain", "NL": "Netherlands",
+        }
+        if scope == "worldwide":
+            location += " | Worldwide"
+        elif isinstance(allowed, list) and allowed:
+            readable = [country_names.get(str(code).upper(), str(code)) for code in allowed]
+            location += " | Eligible countries: " + ", ".join(readable)
+        regions = location_info.get("regions") or []
+        if isinstance(regions, list) and regions:
+            location += " | Regions: " + ", ".join(str(region) for region in regions)
+
+    job = _make_job(
+        source_id="remotejobsorg", source_name="RemoteJobs.org",
+        title=raw.get("title"), company=company_name, url=job_url,
+        description=raw.get("description"), summary=raw.get("description"),
+        published_at=raw.get("posted_at"), location=location,
+        remote_status="remote", employment_type=raw.get("type"),
+        tags=tags, salary_min=raw.get("salary_min"), salary_max=raw.get("salary_max"),
+        salary_currency=raw.get("salary_currency"), salary_period=raw.get("salary_period"),
+        apply_url=raw.get("apply_url") or job_url,
+    )
+    if job:
+        job["salary_text"] = raw.get("salary_text")
+        job["company_website"] = company.get("website") if isinstance(company, dict) else None
+        job["company_profile_url"] = company.get("url") if isinstance(company, dict) else None
+        job["category"] = category_name
+        job["direct_apply"] = raw.get("direct_apply")
+    return job
+
+
 def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
     source_id, source_name = "remotejobsorg", "RemoteJobs.org"
     try:
@@ -706,49 +758,8 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
                     break
                 pages_read += 1
                 for raw in rows:
-                    if not isinstance(raw, dict):
-                        continue
-                    company = raw.get("company")
-                    company_name = company.get("name") if isinstance(company, dict) else company
-                    category = raw.get("category")
-                    category_name = category.get("name") if isinstance(category, dict) else category
-                    tags = [category_name] if category_name else []
-                    if isinstance(category, dict) and category.get("slug"):
-                        tags.append(str(category["slug"]))
-                    job_url = raw.get("url")
-                    location = str(raw.get("location") or "Remote / eligibility not specified")
-                    location_info = raw.get("location_normalization")
-                    if isinstance(location_info, dict):
-                        scope = str(location_info.get("scope") or "").casefold()
-                        allowed = location_info.get("allowed_countries") or []
-                        country_names = {
-                            "NG": "Nigeria", "US": "United States", "GB": "United Kingdom",
-                            "CA": "Canada", "AU": "Australia", "IN": "India", "ZA": "South Africa",
-                            "KE": "Kenya", "GH": "Ghana", "PH": "Philippines", "DE": "Germany",
-                            "FR": "France", "IE": "Ireland", "NZ": "New Zealand", "BR": "Brazil",
-                            "MX": "Mexico", "PT": "Portugal", "ES": "Spain", "NL": "Netherlands",
-                        }
-                        if scope == "worldwide":
-                            location += " | Worldwide"
-                        elif isinstance(allowed, list) and allowed:
-                            readable = [country_names.get(str(code).upper(), str(code)) for code in allowed]
-                            location += " | Eligible countries: " + ", ".join(readable)
-                        regions = location_info.get("regions") or []
-                        if isinstance(regions, list) and regions:
-                            location += " | Regions: " + ", ".join(str(region) for region in regions)
-                    job = _make_job(
-                        source_id=source_id, source_name=source_name,
-                        title=raw.get("title"), company=company_name, url=job_url,
-                        description=raw.get("description"), summary=raw.get("description"),
-                        published_at=raw.get("posted_at"), location=location,
-                        remote_status="remote", employment_type=raw.get("type"),
-                        tags=tags, salary_min=raw.get("salary_min"), salary_max=raw.get("salary_max"),
-                        salary_currency=raw.get("salary_currency"), salary_period=raw.get("salary_period"),
-                        apply_url=raw.get("apply_url") or job_url,
-                    )
+                    job = _remotejobs_job(raw)
                     if job:
-                        job["salary_text"] = raw.get("salary_text")
-                        job["company_website"] = company.get("website") if isinstance(company, dict) else None
                         jobs.append(job)
 
                 dates = [
