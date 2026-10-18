@@ -573,10 +573,13 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
         variants = _query_variants(query)
         page_limit = MAX_SOURCE_PAGES
         request_budget = max(1, min(int(os.getenv("OPPORTUNITY_HIMALAYAS_MAX_REQUESTS", "20")), 50))
-        states = {variant: {"page": 1, "done": False} for variant in variants}
+        states = {
+            variant: {"page": 1, "cursor": None, "done": False}
+            for variant in variants
+        }
 
-        # Breadth-first pagination: try every synonym's first page before spending
-        # the request budget on deeper pages for any one phrase.
+        # When a keyword is present, search its variants breadth-first. With no
+        # keyword, use Himalayas' dedicated unfiltered feed and follow its cursor.
         for round_index in range(page_limit):
             for variant in variants:
                 state = states[variant]
@@ -586,10 +589,16 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
                     partial = True
                     budget_exhausted = True
                     break
-                params = {"sort": "recent", "page": str(state["page"])}
+
                 if variant:
-                    params["q"] = variant
-                url = "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode(params)
+                    params = {"q": variant, "sort": "recent", "page": str(state["page"])}
+                    url = "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode(params)
+                else:
+                    params = {"limit": "20"}
+                    if state["cursor"]:
+                        params["cursor"] = str(state["cursor"])
+                    url = "https://himalayas.app/jobs/api?" + urllib.parse.urlencode(params)
+
                 data, meta = _request_json(url, ttl_seconds=DAY)
                 requests_made += 1
                 cache_used = cache_used and bool(meta.get("cache_used"))
@@ -600,13 +609,24 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
                     state["done"] = True
                     continue
                 jobs.extend(job for raw in raw_jobs if (job := _himalayas_job(raw)))
-                if len(raw_jobs) < 20:
-                    state["done"] = True
-                elif round_index + 1 >= page_limit:
-                    state["done"] = True
-                    partial = True
+
+                if variant:
+                    if len(raw_jobs) < 20:
+                        state["done"] = True
+                    elif round_index + 1 >= page_limit:
+                        state["done"] = True
+                        partial = True
+                    else:
+                        state["page"] += 1
                 else:
-                    state["page"] += 1
+                    next_cursor = data.get("nextCursor") if isinstance(data, dict) else None
+                    if not next_cursor:
+                        state["done"] = True
+                    elif round_index + 1 >= page_limit:
+                        state["done"] = True
+                        partial = True
+                    else:
+                        state["cursor"] = str(next_cursor)
             if budget_exhausted:
                 break
 
@@ -1294,7 +1314,7 @@ def search_jobs(
         report["results"]  # normalized jobs with original links and descriptions
 
     Args:
-        query: Search phrase, e.g. "data entry" or "virtual assistant".
+        query: Optional search phrase. If blank, browse available listings newest first.
         days: Optional rolling window in days (e.g. 5). Mutually exclusive with since.
         since: Optional date/datetime cutoff; accepts YYYY-MM-DD or datetime.
         location: Optional country or region such as "Nigeria".
