@@ -982,9 +982,21 @@ def _matches_location(job: dict[str, Any], location: str | None) -> bool:
     listed = normalize_text(job.get("location", ""))
     if wanted in listed:
         return True
-    return any(word in listed for word in (
+    if any(word in listed for word in (
         "worldwide", "anywhere", "global", "all countries", "no country restriction"
-    ))
+    )):
+        return True
+    # A region-wide remote role is normally eligible in member countries unless the source
+    # explicitly restricts it further. Use only obvious region mappings, not guesses.
+    country_regions = {
+        "nigeria": ("africa",), "ghana": ("africa",), "kenya": ("africa",),
+        "south africa": ("africa",), "uganda": ("africa",), "rwanda": ("africa",),
+        "united states": ("north america",), "usa": ("north america",),
+        "canada": ("north america",), "mexico": ("north america",),
+        "india": ("asia",), "philippines": ("asia",), "singapore": ("asia",),
+        "australia": ("oceania",), "new zealand": ("oceania",),
+    }
+    return any(region in listed for region in country_regions.get(wanted, ()))
 
 
 def _date_filter(job: dict[str, Any], cutoff: datetime | None) -> bool | None:
