@@ -1,6 +1,6 @@
 # Opportunity
 
-A Python-first, local/Google Colab-friendly **multi-source job discovery tool**. Enter a phrase such as `data entry`; it queries several public remote-job feeds and related job-title variants, normalizes the listings, applies optional publication-date and location filters, merges duplicates, and returns original job/application links plus descriptions, dates, salary fields when published, and source status.
+A Python-first, local/Google Colab-friendly **multi-source job discovery tool**. Enter a phrase such as `data entry`; it queries several public job feeds (many of them remote-focused) and related job-title variants, normalizes the listings, applies optional publication-date, location, and work-mode filters, merges duplicates, and returns original job/application links plus descriptions, dates, salary fields when published, and source status.
 
 > **Coverage honesty:** no public interface can guarantee every remote job on every platform. This project queries its configured sources and reports which ones succeeded, failed, used cached results, or hit a pagination cap. It does not claim a source was searched when it was not.
 
@@ -12,6 +12,9 @@ Requires Python 3.10+ (Python 3.11+ recommended). The core search uses only the 
 git clone https://github.com/AgentCalmz/opportunity.git
 cd opportunity
 python opportunity.py "data entry" --days 5
+
+# Optional: exclude known onsite/hybrid listings and keep remote-only results
+python opportunity.py "data entry" --days 5 --remote-only
 ```
 
 Other examples:
@@ -46,7 +49,7 @@ Open `opportunity_colab.ipynb` in Colab, or run these cells in a new notebook:
 
 from opportunity import search_jobs, print_report
 
-report = search_jobs("data entry", days=5, location="Nigeria")
+report = search_jobs("data entry", days=5, location="Nigeria", remote_only=False)  # include all work modes where available
 print_report(report)
 ```
 
@@ -89,7 +92,7 @@ files.download("opportunity_results.json")
 | [Remotive](https://remotive.com/remote-jobs/api) | Public JSON feed, no key required | Cached locally for 24 hours to respect the provider's low-frequency guidance; listings may be delayed. Attribution and source terms apply. |
 | [Arbeitnow](https://blog.arbeitnow.com/blog/job-board-api) | Public JSON feed for Europe and UK, no key required | Regional coverage, not a global job feed. Pagination is capped to avoid excessive requests. |
 
-The app reports per-source health and cache use. A failed source does not prevent successful sources from returning results. Requests are cached locally to lower repeat calls and to help when a provider is temporarily unavailable. Cache files are stored in `.opportunity-cache/` by default and can be moved by setting `OPPORTUNITY_CACHE_DIR`.
+By default, the app includes remote, hybrid, onsite, and unspecified work modes wherever the selected source provides them. Add `--remote-only` on the CLI or pass `remote_only=True` to `search_jobs(...)` to exclude listings explicitly marked onsite or hybrid. Most connected feeds are remote-focused, so disabling the filter does not turn them into general-purpose job boards; it includes non-remote listings only when a source actually supplies them. The app reports per-source health and cache use. A failed source does not prevent successful sources from returning results. Requests are cached locally to lower repeat calls and to help when a provider is temporarily unavailable. Cache files are stored in `.opportunity-cache/` by default and can be moved by setting `OPPORTUNITY_CACHE_DIR`.
 
 ## Optional configuration
 
@@ -107,7 +110,7 @@ Optional environment variables:
 Higher request budgets improve coverage but increase traffic. RemoteJobs.org explicitly asks clients to stay below 200 requests per hour per IP; its default request budget is set below that guidance. Responses are cached locally to reduce repeated requests. Do not treat an undocumented provider limit as unlimited.
 ## Result fields
 
-Each result preserves the original listing URL and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
+Each result preserves the original listing URL and includes company, title, location/eligibility, publication date, work mode, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
 
 Search is deliberately **recall-first**: it keeps exact keyword mentions and recognized job-title variants in the main results list and labels each result as a direct/close related match or a broader keyword hit. For `data entry`, variants include data entry clerk/operator/keyer, data encoder, data capture, data transcription/transcriber, records clerk/specialist, document indexing/processing, and data-processing roles. Several related titles are drawn from O*NET's published job-title examples for data-entry work: https://www.onetonline.org/link/summary/43-9021.00. Broader matches can include incidental mentions, so use the match reason and original listing to judge relevance rather than expecting the engine to hide every weak hit. Unknown country eligibility is retained for manual review instead of silently discarded.
 
