@@ -915,6 +915,8 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
             return 42, "phrase in job-summary excerpt; review"
         if phrase in description:
             return 35, "exact phrase only in full description; review"
+        if all(term in description for term in terms):
+            return 20, "data/entry words scattered in full description"
         return 0, "no useful data-entry title/skill match"
 
     if len(terms) == 1:
