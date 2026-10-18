@@ -767,17 +767,25 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
         cache_used = True
         stale = False
         pages_read = 0
+        requests_made = 0
         partial = False
+        budget_exhausted = False
         variants = _query_variants(query)
         cutoff = _now_utc() - timedelta(days=days) if days is not None else None
-        page_limit = min(MAX_SOURCE_PAGES, 2)
+        page_limit = min(MAX_SOURCE_PAGES, 10)
+        request_budget = max(1, min(int(os.getenv("OPPORTUNITY_REMOTEJOBS_MAX_REQUESTS", "60")), 150))
 
-        for variant in variants:
+        for variant_index, variant in enumerate(variants):
             offset = 0
             for page_index in range(page_limit):
+                if requests_made >= request_budget:
+                    partial = True
+                    budget_exhausted = True
+                    break
                 params = urllib.parse.urlencode({"q": variant, "limit": 50, "offset": offset})
                 url = "https://remotejobs.org/api/v1/jobs?" + params
                 data, meta = _request_json(url, ttl_seconds=HOUR)
+                requests_made += 1
                 cache_used = cache_used and bool(meta.get("cache_used"))
                 stale = stale or bool(meta.get("cache_stale"))
                 rows = data.get("data", []) if isinstance(data, dict) else []
@@ -801,11 +809,21 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
                 offset += len(rows)
                 if page_index == page_limit - 1:
                     partial = True
+            if budget_exhausted:
+                break
 
         meta_summary = {"cache_used": cache_used, "cache_stale": stale}
-        message = f"Queried {len(variants)} keyword phrase(s) across {pages_read} page(s)."
-        if partial:
-            message += f" Page cap ({page_limit} pages per phrase) reached; increase OPPORTUNITY_MAX_PAGES cautiously if needed."
+        message = (
+            f"Queried {len(variants)} keyword phrase(s); read {pages_read} page(s) "
+            f"using {requests_made} API request(s)."
+        )
+        if budget_exhausted:
+            message += (
+                f" Request budget ({request_budget}) reached before all pages/phrases were checked. "
+                "Increase OPPORTUNITY_REMOTEJOBS_MAX_REQUESTS cautiously if desired."
+            )
+        elif partial:
+            message += f" Page cap ({page_limit} pages per phrase) reached; increase OPPORTUNITY_MAX_PAGES cautiously if desired."
         return _result(
             source_id, source_name, jobs, meta_summary,
             status="partial" if partial else "ok", message=message
