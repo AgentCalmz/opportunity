@@ -122,7 +122,9 @@ Optional environment variables:
 
 ## Result fields
 
-Each result preserves the original listing URL, and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, and source attribution. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
+Each strong result preserves the original listing URL, and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
+
+Search relevance is field-weighted: title and structured tags/skills are strongest, summaries are next, and incidental mentions deep in a long description are not treated as ordinary matches. Description-only phrase hits appear separately as lower-confidence review candidates; keyword words scattered across an otherwise unrelated description are excluded. This is a heuristic, not a trained semantic ranking model, so always inspect the listing.
 
 When duplicate listings appear on multiple platforms, the tool merges them and retains the alternate source links in `source_links`.
 
