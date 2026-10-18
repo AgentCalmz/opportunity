@@ -336,7 +336,7 @@ def _make_job(
         "description": description_text,
         "summary": summary_text,
         "published_at": _iso(date_value),
-        "employment_type": strip_html(employment_type) or None,
+        "employment_type": ", ".join(_string_list(employment_type)) or (strip_html(employment_type) or None),
         "seniority": ", ".join(_string_list(seniority)) or (strip_html(seniority) or None),
         "tags": _string_list(tags),
         "salary_min": _optional_number(salary_min),
@@ -515,7 +515,7 @@ def _himalayas_job(raw: Any) -> dict[str, Any] | None:
     )
 
 
-def _fetch_himalayas(query: str) -> dict[str, Any]:
+def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
     source_id, source_name = "himalayas", "Himalayas"
     try:
         jobs: list[dict[str, Any]] = []
@@ -578,7 +578,7 @@ def _remoteok_job(raw: Any) -> dict[str, Any] | None:
     )
 
 
-def _fetch_remoteok() -> dict[str, Any]:
+def _fetch_remoteok(query: str, days: int | None) -> dict[str, Any]:
     source_id, source_name = "remoteok", "Remote OK"
     try:
         data, meta = _request_json("https://remoteok.com/api", ttl_seconds=HOUR)
@@ -626,7 +626,7 @@ def _wwr_job(item: ET.Element) -> dict[str, Any] | None:
     )
 
 
-def _fetch_wwr() -> dict[str, Any]:
+def _fetch_wwr(query: str, days: int | None) -> dict[str, Any]:
     source_id, source_name = "weworkremotely", "We Work Remotely"
     try:
         body, meta = _request_text(
@@ -664,7 +664,7 @@ def _remotive_job(raw: Any) -> dict[str, Any] | None:
     )
 
 
-def _fetch_remotive() -> dict[str, Any]:
+def _fetch_remotive(query: str, days: int | None) -> dict[str, Any]:
     source_id, source_name = "remotive", "Remotive"
     try:
         # Fetch the common full feed once per day; query filtering happens locally.
