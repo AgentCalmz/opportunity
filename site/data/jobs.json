@@ -1,0 +1,33 @@
+{
+  "query": "",
+  "search_mode": "latest",
+  "started_at": null,
+  "completed_at": null,
+  "elapsed_seconds": 0,
+  "timeframe": "last 14 day(s)",
+  "location_filter": null,
+  "remote_only": false,
+  "max_results": 5000,
+  "sources": [],
+  "source_jobs_fetched": 0,
+  "keyword_matches_before_filters": 0,
+  "results_count": 0,
+  "results": [],
+  "strong_matches_count": 0,
+  "broader_matches_count": 0,
+  "location_eligibility_unknown_count": 0,
+  "near_matches_count": 0,
+  "near_matches": [],
+  "audit": {
+    "duplicates_removed": 0,
+    "excluded_no_query_or_related_title_match": 0,
+    "excluded_by_timeframe": 0,
+    "excluded_unknown_publication_date": 0,
+    "excluded_by_location": 0,
+    "location_eligibility_unknown_count": 0,
+    "excluded_non_remote": 0,
+    "source_errors": 0,
+    "source_partials": 0
+  },
+  "coverage_warning": "The first automated collection has not run yet. This placeholder is replaced by the scheduled GitHub Actions refresh."
+}
