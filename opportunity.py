@@ -680,6 +680,39 @@ def _fetch_remotive(query: str, days: int | None) -> dict[str, Any]:
         return _source_error(source_id, source_name, exc)
 
 
+def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
+    source_id, source_name = "remotejobsorg", "RemoteJobs.org"
+    try:
+        params = urllib.parse.urlencode({"q": query, "limit": 50, "offset": 0})
+        url = "https://remotejobs.org/api/v1/jobs?" + params
+        data, meta = _request_json(url, ttl_seconds=HOUR)
+        rows = data.get("data", []) if isinstance(data, dict) else []
+        jobs = []
+        for raw in rows if isinstance(rows, list) else []:
+            if isinstance(raw, dict):
+                company = raw.get("company")
+                company_name = company.get("name") if isinstance(company, dict) else company
+                category = raw.get("category")
+                category_name = category.get("name") if isinstance(category, dict) else category
+                job_url = raw.get("url")
+                job = _make_job(
+                    source_id=source_id, source_name=source_name,
+                    title=raw.get("title"), company=company_name, url=job_url,
+                    description=raw.get("description"), summary=raw.get("description"),
+                    published_at=raw.get("posted_at"), location=raw.get("location") or "Remote",
+                    remote_status="remote", employment_type=raw.get("type"),
+                    tags=[category_name] if category_name else [],
+                    salary_min=raw.get("salary_min"), salary_max=raw.get("salary_max"),
+                    salary_currency=raw.get("salary_currency"), salary_period=raw.get("salary_period"),
+                    apply_url=raw.get("apply_url") or job_url,
+                )
+                if job:
+                    jobs.append(job)
+        return _result(source_id, source_name, jobs, meta)
+    except Exception as exc:
+        return _source_error(source_id, source_name, exc)
+
+
 def _arbeitnow_job(raw: Any, source_id: str, source_name: str) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
