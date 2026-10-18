@@ -34,8 +34,8 @@ MAX_SOURCE_PAGES = max(1, int(os.getenv("OPPORTUNITY_MAX_PAGES", "10")))
 
 SOURCE_NOTES = {
     "himalayas": (
-        "Public search API; data refreshes about daily. Attribute Himalayas and link "
-        "to the original listing. A free API key raises the documented allowance."
+        "Public no-key search API; data refreshes about daily and rate limits may change. "
+        "Attribute Himalayas and link to the original listing."
     ),
     "jobicy": (
         "No-key public API. Its feed contains jobs published within the last 7 days; "
@@ -584,11 +584,7 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
                     break
                 params = {"q": variant, "sort": "recent", "page": str(state["page"])}
                 url = "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode(params)
-                headers: dict[str, str] = {}
-                api_key = os.getenv("HIMALAYAS_API_KEY", "").strip()
-                if api_key:
-                    headers["Authorization"] = f"Bearer {api_key}"
-                data, meta = _request_json(url, ttl_seconds=DAY, headers=headers)
+                data, meta = _request_json(url, ttl_seconds=DAY)
                 requests_made += 1
                 cache_used = cache_used and bool(meta.get("cache_used"))
                 stale = stale or bool(meta.get("cache_stale"))
