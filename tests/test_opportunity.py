@@ -313,6 +313,53 @@ class OpportunityUtilityTests(unittest.TestCase):
         self.assertEqual(remote_only_report["results_count"], 1)
         self.assertEqual(remote_only_report["results"][0]["company"], "Remote Example")
 
+    def test_empty_query_returns_latest_listings_newest_first(self):
+        newest = opportunity._make_job(
+            source_id="fake", source_name="Fake source",
+            title="Gardener", company="Newest Co",
+            url="https://example.com/jobs/newest",
+            description="Outdoor maintenance work.",
+            summary="Outdoor maintenance work.",
+            published_at="2026-10-18T12:00:00Z",
+            location="Abuja",
+            remote_status="onsite",
+        )
+        older = opportunity._make_job(
+            source_id="fake", source_name="Fake source",
+            title="Data Entry Clerk", company="Older Co",
+            url="https://example.com/jobs/older",
+            description="Enter records accurately.",
+            summary="Enter records accurately.",
+            published_at="2026-10-16T12:00:00Z",
+            location="Lagos",
+            remote_status="hybrid",
+        )
+        self.assertIsNotNone(newest)
+        self.assertIsNotNone(older)
+
+        def fake_runner(query, _days):
+            self.assertEqual(query, "")
+            return {
+                "source_id": "fake",
+                "source_name": "Fake source",
+                "status": "ok",
+                "raw_jobs_count": 2,
+                "jobs": [older, newest],
+                "cache_used": False,
+            }
+
+        with patch.dict(opportunity.SOURCE_RUNNERS, {"fake": ("Fake source", fake_runner)}, clear=True):
+            report = opportunity.search_jobs("", sources=["fake"])
+
+        self.assertEqual(report["search_mode"], "latest")
+        self.assertEqual(report["query"], "")
+        self.assertEqual(report["results_count"], 2)
+        self.assertEqual([job["company"] for job in report["results"]], ["Newest Co", "Older Co"])
+        self.assertEqual(report["keyword_matches_before_filters"], 0)
+        self.assertEqual(report["strong_matches_count"], 0)
+        self.assertEqual(report["broader_matches_count"], 0)
+        self.assertEqual(report["audit"]["excluded_no_query_or_related_title_match"], 0)
+
     def test_data_entry_synonym_variants_are_broad(self):
         variants = opportunity._query_variants("data entry")
         for expected in (
