@@ -152,6 +152,43 @@ class OpportunityUtilityTests(unittest.TestCase):
         self.assertIn("review", reason)
         self.assertFalse(opportunity._matches_query(job, "data entry"))
 
+    def test_data_entry_query_accepts_related_job_title(self):
+        job = {
+            "title": "Data Encoder",
+            "company": "Example Ltd",
+            "location": "Remote",
+            "description": "Encode customer records accurately.",
+            "summary": "Encode customer records accurately.",
+            "employment_type": None,
+            "seniority": None,
+            "tags": [],
+        }
+        score, reason = opportunity._query_relevance(job, "data entry")
+        self.assertGreaterEqual(score, 45)
+        self.assertIn("related title", reason)
+
+    def test_long_description_is_not_used_as_unbounded_summary(self):
+        body = ("General operations duties. " * 40) + "Occasional data entry work."
+        job = opportunity._make_job(
+            source_id="test",
+            source_name="Test source",
+            title="Operations Associate",
+            company="Example Ltd",
+            url="https://example.com/jobs/125",
+            description=body,
+            summary=body,
+        )
+        self.assertIsNotNone(job)
+        self.assertLessEqual(len(job["summary"]), 500)
+        score, reason = opportunity._query_relevance(job, "data entry")
+        self.assertLess(score, 45)
+        self.assertTrue("review" in reason or score == 0)
+
+    def test_remotejobs_source_is_registered_and_uses_common_signature(self):
+        self.assertIn("remotejobsorg", opportunity.SOURCE_RUNNERS)
+        runner = opportunity.SOURCE_RUNNERS["remotejobsorg"][1]
+        inspect.signature(runner).bind("data entry", 5)
+
 
 if __name__ == "__main__":
     unittest.main()
