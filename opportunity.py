@@ -1147,6 +1147,7 @@ def _dedupe(jobs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     unique: list[dict[str, Any]] = []
     by_url: dict[str, dict[str, Any]] = {}
     by_fingerprint: dict[str, dict[str, Any]] = {}
+    by_company_title: dict[str, list[dict[str, Any]]] = {}
 
     def enrich(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
         seen_links = {link.get("url") for link in existing.get("source_links", [])}
@@ -1154,11 +1155,9 @@ def _dedupe(jobs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
             if link.get("url") not in seen_links:
                 existing.setdefault("source_links", []).append(link)
                 seen_links.add(link.get("url"))
-        # Keep the strongest keyword match when feeds describe one role differently.
         if incoming.get("relevance_score", 0) > existing.get("relevance_score", 0):
             existing["relevance_score"] = incoming["relevance_score"]
             existing["match_reason"] = incoming.get("match_reason", "keyword match")
-        # Preserve a richer description or useful fields from the duplicate.
         if len(incoming.get("description", "")) > len(existing.get("description", "")):
             existing["description"] = incoming["description"]
         if len(incoming.get("summary", "")) > len(existing.get("summary", "")):
@@ -1170,21 +1169,47 @@ def _dedupe(jobs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
         for tag in incoming.get("tags", []):
             if tag not in existing.setdefault("tags", []):
                 existing["tags"].append(tag)
+        location = incoming.get("location")
+        if location and location != existing.get("location"):
+            locations = existing.setdefault("alternate_locations", [])
+            if location not in locations:
+                locations.append(location)
+
+    def shared_cross_source_posting(left: dict[str, Any], right: dict[str, Any]) -> bool:
+        if left.get("source_id") == right.get("source_id"):
+            return False
+        left_date = parse_datetime(left.get("published_at"))
+        right_date = parse_datetime(right.get("published_at"))
+        if left_date is None or right_date is None:
+            return False
+        return abs((left_date - right_date).total_seconds()) <= 36 * 60 * 60
 
     for job in jobs:
         url_key = _url_key(job.get("job_url", ""))
-        fingerprint = "|".join([
-            normalize_text(job.get("company", "")),
-            normalize_text(job.get("title", "")),
-            normalize_text(job.get("location", "")),
-        ])
+        company = normalize_text(job.get("company", ""))
+        title = normalize_text(job.get("title", ""))
+        location = normalize_text(job.get("location", ""))
+        fingerprint = "|".join([company, title, location])
+        company_title_key = "|".join([company, title])
         existing = by_url.get(url_key) or by_fingerprint.get(fingerprint)
+
+        # Merge cross-board copies of the same role when both company/title match and
+        # publication timestamps are within 36 hours. Preserve alternate URLs/locations.
+        if existing is None:
+            for candidate in by_company_title.get(company_title_key, []):
+                if shared_cross_source_posting(candidate, job):
+                    existing = candidate
+                    break
+
         if existing:
             enrich(existing, job)
             continue
+
         unique.append(job)
         by_url[url_key] = job
         by_fingerprint[fingerprint] = job
+        by_company_title.setdefault(company_title_key, []).append(job)
+
     return unique, len(jobs) - len(unique)
 
 
