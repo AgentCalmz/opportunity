@@ -814,17 +814,26 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
         budget_exhausted = False
         variants = _query_variants(query)
         cutoff = _now_utc() - timedelta(days=days) if days is not None else None
-        page_limit = min(MAX_SOURCE_PAGES, 10)
+        page_limit = MAX_SOURCE_PAGES
         request_budget = max(1, min(int(os.getenv("OPPORTUNITY_REMOTEJOBS_MAX_REQUESTS", "60")), 150))
+        states = {variant: {"offset": 0, "done": False} for variant in variants}
 
-        for variant_index, variant in enumerate(variants):
-            offset = 0
-            for page_index in range(page_limit):
+        # Breadth-first pagination gives every synonym a chance before deeply paging
+        # the first search phrase. Request budgets remain below the provider's published cap.
+        for round_index in range(page_limit):
+            for variant in variants:
+                state = states[variant]
+                if state["done"]:
+                    continue
                 if requests_made >= request_budget:
                     partial = True
                     budget_exhausted = True
                     break
-                params = urllib.parse.urlencode({"q": variant, "limit": 50, "offset": offset})
+                params = urllib.parse.urlencode({
+                    "q": variant,
+                    "limit": 50,
+                    "offset": state["offset"],
+                })
                 url = "https://remotejobs.org/api/v1/jobs?" + params
                 data, meta = _request_json(url, ttl_seconds=HOUR)
                 requests_made += 1
@@ -832,7 +841,8 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
                 stale = stale or bool(meta.get("cache_stale"))
                 rows = data.get("data", []) if isinstance(data, dict) else []
                 if not isinstance(rows, list) or not rows:
-                    break
+                    state["done"] = True
+                    continue
                 pages_read += 1
                 for raw in rows:
                     job = _remotejobs_job(raw)
@@ -844,13 +854,18 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
                     for raw in rows if isinstance(raw, dict)
                 ]
                 if cutoff and dates and all(posted is not None and posted < cutoff for posted in dates):
-                    break
+                    state["done"] = True
+                    continue
+
                 pagination = data.get("pagination", {}) if isinstance(data, dict) else {}
-                if not isinstance(pagination, dict) or not pagination.get("has_more"):
-                    break
-                offset += len(rows)
-                if page_index == page_limit - 1:
+                has_more = bool(pagination.get("has_more")) if isinstance(pagination, dict) else False
+                if not has_more:
+                    state["done"] = True
+                elif round_index + 1 >= page_limit:
+                    state["done"] = True
                     partial = True
+                else:
+                    state["offset"] += len(rows)
             if budget_exhausted:
                 break
 
@@ -861,11 +876,11 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
         )
         if budget_exhausted:
             message += (
-                f" Request budget ({request_budget}) reached before all pages/phrases were checked. "
+                f" Request budget ({request_budget}) reached before all phrases/pages were checked. "
                 "Increase OPPORTUNITY_REMOTEJOBS_MAX_REQUESTS cautiously if desired."
             )
         elif partial:
-            message += f" Page cap ({page_limit} pages per phrase) reached; increase OPPORTUNITY_MAX_PAGES cautiously if desired."
+            message += f" Page cap ({page_limit} per phrase) reached; increase OPPORTUNITY_MAX_PAGES cautiously if desired."
         return _result(
             source_id, source_name, jobs, meta_summary,
             status="partial" if partial else "ok", message=message
