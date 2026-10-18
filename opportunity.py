@@ -446,39 +446,66 @@ def _fetch_jobicy(query: str, days: int | None) -> dict[str, Any]:
     source_id, source_name = "jobicy", "Jobicy"
     try:
         jobs: list[dict[str, Any]] = []
-        cursor: str | None = None
         meta_all = {"cache_used": True, "cache_stale": False}
-        pages = 0
-        while pages < min(MAX_SOURCE_PAGES, 10):
-            params: dict[str, str] = {"count": "200"}
-            clean_query = query.strip()
-            if len(clean_query) >= 3:
-                params["tag"] = clean_query[:50]
-            if cursor:
-                params["cursor"] = cursor
-            url = "https://jobicy.com/api/v2/remote-jobs?" + urllib.parse.urlencode(params)
-            data, meta = _request_json(url, ttl_seconds=HOUR)
-            pages += 1
-            meta_all["cache_used"] = bool(meta_all["cache_used"] and meta.get("cache_used"))
-            meta_all["cache_stale"] = bool(meta_all["cache_stale"] or meta.get("cache_stale"))
-            raw_jobs = data.get("jobs", []) if isinstance(data, dict) else []
-            if not isinstance(raw_jobs, list):
-                raw_jobs = []
-            page_jobs = [job for raw in raw_jobs if (job := _jobicy_job(raw))]
-            jobs.extend(page_jobs)
-            if days is not None and page_jobs:
-                cutoff = _now_utc() - timedelta(days=days)
-                dated = [parse_datetime(raw.get("pubDate")) for raw in raw_jobs if isinstance(raw, dict)]
-                if dated and all(dt is not None and dt < cutoff for dt in dated):
+        variants = _query_variants(query)
+        request_budget = max(1, min(int(os.getenv("OPPORTUNITY_JOBICY_MAX_REQUESTS", "30")), 60))
+        page_limit = min(MAX_SOURCE_PAGES, 5)
+        requests_made = 0
+        partial = False
+        cutoff = _now_utc() - timedelta(days=days) if days is not None else None
+
+        for variant in variants:
+            cursor: str | None = None
+            for page_index in range(page_limit):
+                if requests_made >= request_budget:
+                    partial = True
                     break
-            next_cursor = data.get("nextCursor") if isinstance(data, dict) else None
-            has_more = bool(data.get("hasMore")) if isinstance(data, dict) else False
-            if not next_cursor or not has_more:
+                params: dict[str, str] = {"count": "200", "tag": variant[:50]}
+                if cursor:
+                    params["cursor"] = cursor
+                url = "https://jobicy.com/api/v2/remote-jobs?" + urllib.parse.urlencode(params)
+                data, meta = _request_json(url, ttl_seconds=HOUR)
+                requests_made += 1
+                meta_all["cache_used"] = bool(meta_all["cache_used"] and meta.get("cache_used"))
+                meta_all["cache_stale"] = bool(meta_all["cache_stale"] or meta.get("cache_stale"))
+                raw_jobs = data.get("jobs", []) if isinstance(data, dict) else []
+                if not isinstance(raw_jobs, list):
+                    raw_jobs = []
+                jobs.extend(job for raw in raw_jobs if (job := _jobicy_job(raw)))
+
+                dated = [
+                    parse_datetime(_first(raw.get("pubDate"), raw.get("date")))
+                    for raw in raw_jobs if isinstance(raw, dict)
+                ]
+                if cutoff and dated and all(dt is not None and dt < cutoff for dt in dated):
+                    break
+
+                next_cursor = data.get("nextCursor") if isinstance(data, dict) else None
+                has_more = bool(data.get("hasMore")) if isinstance(data, dict) else False
+                if not next_cursor or not has_more:
+                    break
+                cursor = str(next_cursor)
+                if page_index == page_limit - 1:
+                    partial = True
+
+            if requests_made >= request_budget:
+                if variant != variants[-1]:
+                    partial = True
                 break
-            cursor = str(next_cursor)
-        status = "partial" if pages >= min(MAX_SOURCE_PAGES, 10) and cursor else "ok"
-        message = f"Read {pages} page(s) from the last-7-days feed."
-        return _result(source_id, source_name, jobs, meta_all, status=status, message=message)
+
+        message = (
+            f"Queried {len(variants)} role-title phrase(s); read {requests_made} page(s) "
+            "from Jobicy's last-7-days feed."
+        )
+        if partial:
+            message += (
+                f" Retrieval cap reached (max {request_budget} requests and {page_limit} pages per phrase); "
+                "increase OPPORTUNITY_JOBICY_MAX_REQUESTS cautiously if you need broader coverage."
+            )
+        return _result(
+            source_id, source_name, jobs, meta_all,
+            status="partial" if partial else "ok", message=message
+        )
     except Exception as exc:
         return _source_error(source_id, source_name, exc)
 
