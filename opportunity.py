@@ -449,20 +449,27 @@ def _fetch_jobicy(query: str, days: int | None) -> dict[str, Any]:
         meta_all = {"cache_used": True, "cache_stale": False}
         variants = _query_variants(query)
         request_budget = max(1, min(int(os.getenv("OPPORTUNITY_JOBICY_MAX_REQUESTS", "30")), 60))
-        page_limit = min(MAX_SOURCE_PAGES, 5)
+        page_limit = MAX_SOURCE_PAGES
         requests_made = 0
         partial = False
+        budget_exhausted = False
         cutoff = _now_utc() - timedelta(days=days) if days is not None else None
+        states = {variant: {"cursor": None, "done": False} for variant in variants}
 
-        for variant in variants:
-            cursor: str | None = None
-            for page_index in range(page_limit):
+        # Breadth-first pagination keeps a first page for every role synonym before
+        # spending the request budget on deeper pages for one phrase.
+        for round_index in range(page_limit):
+            for variant in variants:
+                state = states[variant]
+                if state["done"]:
+                    continue
                 if requests_made >= request_budget:
                     partial = True
+                    budget_exhausted = True
                     break
                 params: dict[str, str] = {"count": "200", "tag": variant[:50]}
-                if cursor:
-                    params["cursor"] = cursor
+                if state["cursor"]:
+                    params["cursor"] = str(state["cursor"])
                 url = "https://jobicy.com/api/v2/remote-jobs?" + urllib.parse.urlencode(params)
                 data, meta = _request_json(url, ttl_seconds=HOUR)
                 requests_made += 1
@@ -478,30 +485,32 @@ def _fetch_jobicy(query: str, days: int | None) -> dict[str, Any]:
                     for raw in raw_jobs if isinstance(raw, dict)
                 ]
                 if cutoff and dated and all(dt is not None and dt < cutoff for dt in dated):
-                    break
+                    state["done"] = True
+                    continue
 
                 next_cursor = data.get("nextCursor") if isinstance(data, dict) else None
                 has_more = bool(data.get("hasMore")) if isinstance(data, dict) else False
                 if not next_cursor or not has_more:
-                    break
-                cursor = str(next_cursor)
-                if page_index == page_limit - 1:
+                    state["done"] = True
+                elif round_index + 1 >= page_limit:
+                    state["done"] = True
                     partial = True
-
-            if requests_made >= request_budget:
-                if variant != variants[-1]:
-                    partial = True
+                else:
+                    state["cursor"] = str(next_cursor)
+            if budget_exhausted:
                 break
 
         message = (
             f"Queried {len(variants)} role-title phrase(s); read {requests_made} page(s) "
             "from Jobicy's last-7-days feed."
         )
-        if partial:
+        if budget_exhausted:
             message += (
-                f" Retrieval cap reached (max {request_budget} requests and {page_limit} pages per phrase); "
-                "increase OPPORTUNITY_JOBICY_MAX_REQUESTS cautiously if you need broader coverage."
+                f" Request budget ({request_budget}) reached before all phrases/pages were checked. "
+                "Increase OPPORTUNITY_JOBICY_MAX_REQUESTS cautiously if desired."
             )
+        elif partial:
+            message += f" Page cap ({page_limit} per phrase) reached; increase OPPORTUNITY_MAX_PAGES cautiously if desired."
         return _result(
             source_id, source_name, jobs, meta_all,
             status="partial" if partial else "ok", message=message
