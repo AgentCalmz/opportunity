@@ -298,7 +298,8 @@
       $("#updated-time").textContent = "Not generated yet";
       return;
     }
-    $("#freshness-label").textContent = "Updated " + relativeDate(date);
+    const ageMs = Math.max(0, Date.now() - date.getTime());
+    $("#freshness-label").textContent = ageMs < 60000 ? "Updated just now" : "Updated " + relativeDate(date);
     $("#updated-time").textContent = formatExactDate(date);
   };
 
