@@ -1015,7 +1015,7 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
                 return 100, "direct data-entry title"
         for alias in related_titles:
             if alias in title:
-                return 82, f"related job title: {alias}"
+                return 82, f"related title: {alias}"
         for alias in adjacent_titles:
             if alias in title:
                 return 45, f"adjacent administrative title: {alias}"
@@ -1032,9 +1032,9 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
         # Keep exact phrases and the common alternate job titles even when they appear in the body.
         # This intentionally favors recall; match score/reason communicates weaker evidence.
         if phrase in summary:
-            return 42, "phrase in summary; broader match"
+            return 42, "phrase in summary; broader match (review)"
         if phrase in description:
-            return 35, "exact phrase in full description; broader match"
+            return 35, "exact phrase in full description; broader match (review)"
         related_body_terms = (
             "data encoder", "data capture", "data transcription", "data transcriber",
             "records clerk", "records specialist", "document indexing", "document processing",
@@ -1045,7 +1045,7 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
                 return 40, f"related phrase in summary: {alias}"
         for alias in related_body_terms:
             if alias in description:
-                return 25, f"related phrase in full description: {alias}; broad match"
+                return 25, f"related phrase in full description: {alias}; broad match (review)"
         if all(term in title for term in terms):
             return 70, "query words in title"
         if all(term in metadata for term in terms):
@@ -1053,7 +1053,7 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
         if all(term in summary for term in terms):
             return 30, "query words in summary; broader match"
         if all(term in description for term in terms):
-            return 20, "query words scattered in description; broad match"
+            return 20, "query words scattered in description; broad match (review)"
         return 0, "no query phrase or recognized related-title match"
 
     if len(terms) == 1:
@@ -1062,9 +1062,9 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
         if phrase in metadata:
             return 85, "skill/tag keyword"
         if phrase in summary:
-            return 42, "summary keyword; broader match"
+            return 42, "summary keyword; broader match (review)"
         if phrase in description:
-            return 30, "description-only keyword; broader match"
+            return 30, "description-only keyword; broader match (review)"
         return 0, "no useful keyword match"
 
     if phrase in title:
@@ -1076,13 +1076,13 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
     if all(term in metadata for term in terms):
         return 72, "all keywords in skills/tags"
     if phrase in summary:
-        return 42, "exact phrase in summary; broader match"
+        return 42, "exact phrase in summary; broader match (review)"
     if all(term in summary for term in terms):
-        return 38, "all keywords in summary; broader match"
+        return 38, "all keywords in summary; broader match (review)"
     if phrase in description:
-        return 35, "exact phrase in full description; broader match"
+        return 35, "exact phrase in full description; broader match (review)"
     if all(term in description for term in terms):
-        return 20, "query words scattered in full description; broad match"
+        return 20, "query words scattered in full description; broad match (review)"
     return 0, "no query keyword match"
 
 
