@@ -330,7 +330,8 @@ def _make_job(
         return None
     company_text = strip_html(company) or "Company not listed"
     description_text = strip_html(description)
-    summary_text = strip_html(summary) or description_text[:500]
+    # The summary is a short excerpt, never the full description; relevance ranking relies on this distinction.
+    summary_text = (strip_html(summary) or description_text[:500])[:500]
     date_value = parse_datetime(published_at)
     job: dict[str, Any] = {
         "title": title_text,
@@ -868,7 +869,7 @@ def _query_variants(query: str) -> list[str]:
 
 
 def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
-    """Score relevance by field so incidental words in a long description aren't enough."""
+    """Score title/structured relevance above mentions in the body of a job ad."""
     terms = normalize_text(query).split()
     if not terms:
         return 100, "empty query"
@@ -882,13 +883,47 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
     summary = normalize_text(job.get("summary", ""))
     description = normalize_text(job.get("description", ""))
 
+    # A few intentional job-title synonyms help when boards use different titles.
+    data_entry_query = phrase in {
+        "data entry", "data entry jobs", "data entry job", "data entry clerk",
+        "data entry operator", "data entry specialist",
+    }
+    if data_entry_query:
+        strong_title_aliases = {
+            "data entry", "data entry clerk", "data entry specialist",
+            "data entry operator", "data encoder", "data capture",
+            "data transcription",
+        }
+        review_title_aliases = {"records clerk"}
+        for alias in strong_title_aliases:
+            if alias in title:
+                return (100 if "data entry" in title else 82), (
+                    "direct data-entry title" if "data entry" in title
+                    else f"related title: {alias}"
+                )
+        for alias in strong_title_aliases:
+            if alias in metadata:
+                return 75, f"related skill/category: {alias}"
+        for alias in review_title_aliases:
+            if alias in title:
+                return 38, f"related administrative title: {alias}; review"
+        # Do not interpret "data" and "entry-level" as the phrase "data entry".
+        # Also don't promote a body mention simply because it appears in a long excerpt.
+        if phrase in metadata:
+            return 90, "exact phrase in skills/tags"
+        if phrase in summary:
+            return 42, "phrase in job-summary excerpt; review"
+        if phrase in description:
+            return 35, "exact phrase only in full description; review"
+        return 0, "no useful data-entry title/skill match"
+
     if len(terms) == 1:
         if phrase in title:
             return 100, "title keyword"
         if phrase in metadata:
             return 85, "skill/tag keyword"
         if phrase in summary:
-            return 60, "summary keyword"
+            return 42, "summary keyword; review"
         if phrase in description:
             return 30, "description-only keyword; review"
         return 0, "no useful keyword match"
@@ -902,9 +937,9 @@ def _query_relevance(job: dict[str, Any], query: str) -> tuple[int, str]:
     if all(term in metadata for term in terms):
         return 72, "all keywords in skills/tags"
     if phrase in summary:
-        return 60, "exact phrase in summary"
+        return 42, "exact phrase in job-summary excerpt; review"
     if all(term in summary for term in terms):
-        return 50, "all keywords in summary"
+        return 38, "all keywords in summary excerpt; review"
     if phrase in description:
         return 35, "exact phrase only in full description; review"
     if all(term in description for term in terms):
