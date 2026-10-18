@@ -44,6 +44,10 @@ SOURCE_NOTES = {
     "remoteok": (
         "Public JSON feed. Preserve Remote OK attribution and link to the original job."
     ),
+    "remotejobsorg": (
+        "Public no-key JSON search API. Search titles and descriptions directly, cache "
+        "responses, stay within published request guidance, and keep attribution."
+    ),
     "weworkremotely": (
         "Public RSS feed. Attribute We Work Remotely and link to the original job. "
         "Use for personal discovery; review source terms before redistributing data."
