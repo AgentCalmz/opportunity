@@ -84,6 +84,7 @@ files.download("opportunity_results.json")
 | [Himalayas](https://himalayas.app/api) | Public JSON search endpoint, no key required | Unkeyed requests share a public allowance. Its free API key has documented higher limits (60 requests/minute, 10,000/day); data refreshes daily. Must retain attribution/link and review API terms. |
 | [Jobicy](https://github.com/Jobicy/remote-jobs-api) | Public JSON API, no key required | Endpoint only provides jobs from the most recent 7 days; up to 200 jobs/page and cursor pagination. |
 | [Remote OK](https://remoteok.com/faq) | Public JSON feed, no key required | Feed availability and practical limits can change; retain source attribution and direct job link. |
+| [RemoteJobs.org](https://remotejobs.org/developers/api) | Public no-key JSON search API with title/description keyword search and pagination | Published guidance says stay below 200 requests/hour/IP; responses are locally cached for one hour and should carry attribution. |
 | [We Work Remotely](https://weworkremotely.com/remote-job-rss-feed) | Public RSS feed | Recent feed, not a complete historical database; attribute the source. Review API terms before redistributing. |
 | [Remotive](https://remotive.com/remote-jobs/api) | Public JSON feed, no key required | Cached locally for 24 hours to respect the provider's low-frequency guidance; listings may be delayed. Attribution and source terms apply. |
 | [Arbeitnow](https://blog.arbeitnow.com/blog/job-board-api) | Public JSON feed for Europe and UK, no key required | Regional coverage, not a global job feed. Pagination is capped to avoid excessive requests. |
@@ -124,7 +125,7 @@ Optional environment variables:
 
 Each strong result preserves the original listing URL, and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
 
-Search relevance is field-weighted: title and structured tags/skills are strongest, summaries are next, and incidental mentions deep in a long description are not treated as ordinary matches. Description-only phrase hits appear separately as lower-confidence review candidates; keyword words scattered across an otherwise unrelated description are excluded. This is a heuristic, not a trained semantic ranking model, so always inspect the listing.
+Search relevance is field-weighted: title and structured tags/skills are strongest, summary-only and description-only mentions are review candidates rather than strong matches, and incidental words scattered across an unrelated description are excluded. For the common `data entry` query, a small explicit map also searches related titles such as data encoder, data capture, and data transcription; administrative titles such as records clerk remain review candidates. This is a heuristic, not a trained semantic ranking model, so always inspect the listing.
 
 When duplicate listings appear on multiple platforms, the tool merges them and retains the alternate source links in `source_links`.
 
