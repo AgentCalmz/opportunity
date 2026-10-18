@@ -558,16 +558,22 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
         partial = False
         budget_exhausted = False
         variants = _query_variants(query)
-        page_limit = min(MAX_SOURCE_PAGES, 5)
+        page_limit = MAX_SOURCE_PAGES
         request_budget = max(1, min(int(os.getenv("OPPORTUNITY_HIMALAYAS_MAX_REQUESTS", "20")), 50))
+        states = {variant: {"page": 1, "done": False} for variant in variants}
 
-        for variant_index, variant in enumerate(variants):
-            for page in range(1, page_limit + 1):
+        # Breadth-first pagination: try every synonym's first page before spending
+        # the request budget on deeper pages for any one phrase.
+        for round_index in range(page_limit):
+            for variant in variants:
+                state = states[variant]
+                if state["done"]:
+                    continue
                 if requests_made >= request_budget:
                     partial = True
                     budget_exhausted = True
                     break
-                params = {"q": variant, "sort": "recent", "page": str(page)}
+                params = {"q": variant, "sort": "recent", "page": str(state["page"])}
                 url = "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode(params)
                 headers: dict[str, str] = {}
                 api_key = os.getenv("HIMALAYAS_API_KEY", "").strip()
@@ -580,12 +586,16 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
                 pages_read += 1
                 raw_jobs = data.get("jobs", []) if isinstance(data, dict) else []
                 if not isinstance(raw_jobs, list) or not raw_jobs:
-                    break
+                    state["done"] = True
+                    continue
                 jobs.extend(job for raw in raw_jobs if (job := _himalayas_job(raw)))
                 if len(raw_jobs) < 20:
-                    break
-                if page == page_limit:
+                    state["done"] = True
+                elif round_index + 1 >= page_limit:
+                    state["done"] = True
                     partial = True
+                else:
+                    state["page"] += 1
             if budget_exhausted:
                 break
 
@@ -596,7 +606,7 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
         )
         if budget_exhausted:
             message += (
-                f" Request budget ({request_budget}) reached before every phrase/page was checked. "
+                f" Request budget ({request_budget}) reached before all pages were checked. "
                 "Increase OPPORTUNITY_HIMALAYAS_MAX_REQUESTS cautiously if desired."
             )
         elif partial:
