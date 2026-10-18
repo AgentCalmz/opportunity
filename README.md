@@ -120,12 +120,15 @@ Optional environment variables:
 - `OPPORTUNITY_CACHE_DIR`: cache directory (default `.opportunity-cache`).
 - `OPPORTUNITY_SOURCES`: comma-separated source allowlist, e.g. `himalayas,jobicy,remoteok`.
 - `OPPORTUNITY_MAX_PAGES`: pagination cap per paginated source (default 10). Higher values may increase request volume; a provider may rate-limit you.
+- `OPPORTUNITY_REMOTEJOBS_MAX_REQUESTS`: per-search request budget for RemoteJobs.org (default 60, hard-capped at 150 to stay below its published 200/hour/IP guidance).
+- `OPPORTUNITY_JOBICY_MAX_REQUESTS`: per-search request budget for Jobicy variants (default 30, capped at 60).
+- `OPPORTUNITY_HIMALAYAS_MAX_REQUESTS`: per-search request budget for Himalayas variants (default 20, capped at 50).
 
 ## Result fields
 
 Each strong result preserves the original listing URL, and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
 
-Search relevance is field-weighted: title and structured tags/skills are strongest, summary-only and description-only mentions are review candidates rather than strong matches, and incidental words scattered across an unrelated description are excluded. For the common `data entry` query, a small explicit map also searches related titles such as data encoder, data capture, and data transcription; administrative titles such as records clerk remain review candidates. This is a heuristic, not a trained semantic ranking model, so always inspect the listing.
+Search is deliberately **recall-first**: it keeps exact keyword mentions and recognized job-title variants in the main results list and labels each result as a direct/close related match or a broader keyword hit. For `data entry`, variants include data entry clerk/operator/keyer, data encoder, data capture, data transcription/transcriber, records clerk/specialist, document indexing/processing, and data-processing roles. Broader matches can include incidental mentions, so use the match reason and original listing to judge relevance rather than expecting the engine to hide every weak hit. Unknown country eligibility is retained for manual review instead of silently discarded.
 
 When duplicate listings appear on multiple platforms, the tool merges them and retains the alternate source links in `source_links`.
 
