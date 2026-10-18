@@ -38,6 +38,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Restore provider-response cache
+        uses: actions/cache@v4
+        with:
+          path: .opportunity-cache
+          key: opportunity-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            opportunity-cache-${{ runner.os }}-${{ github.ref_name }}-
+
       - name: Compile Python source
         run: python -m py_compile opportunity.py tests/test_opportunity.py
 
