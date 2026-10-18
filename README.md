@@ -81,7 +81,7 @@ files.download("opportunity_results.json")
 
 | Source | Access | Important limitation |
 |---|---|---|
-| [Himalayas](https://himalayas.app/api) | Public JSON search endpoint, no key required | Unkeyed requests share a public allowance. Its free API key has documented higher limits (60 requests/minute, 10,000/day); data refreshes daily. Must retain attribution/link and review API terms. |
+| [Himalayas](https://himalayas.app/api) | Public JSON search endpoint, no key required | Data refreshes daily; rate limits can change and the API may return 429. Retain source attribution and link to the original listing. |
 | [Jobicy](https://github.com/Jobicy/remote-jobs-api) | Public JSON API, no key required | Endpoint only provides jobs from the most recent 7 days; up to 200 jobs/page and cursor pagination. |
 | [Remote OK](https://remoteok.com/faq) | Public JSON feed, no key required | Feed availability and practical limits can change; retain source attribution and direct job link. |
 | [RemoteJobs.org](https://remotejobs.org/developers/api) | Public no-key JSON search API with title/description keyword search and pagination | Published guidance says stay below 200 requests/hour/IP; responses are locally cached for one hour and should carry attribution. |
@@ -93,37 +93,18 @@ The app reports per-source health and cache use. A failed source does not preven
 
 ## Optional configuration
 
-No API key is required for the default source set. Himalayas allows an optional free key for its documented higher rate limit.
-
-PowerShell:
-```powershell
-$env:HIMALAYAS_API_KEY = "your-key"
-python opportunity.py "data entry" --days 5
-```
-
-macOS/Linux:
-```bash
-export HIMALAYAS_API_KEY="your-key"
-python opportunity.py "data entry" --days 5
-```
-
-Colab:
-```python
-import os
-os.environ["HIMALAYAS_API_KEY"] = "your-key"
-```
-
-Keep keys private; do not commit them to GitHub or share a notebook with a hard-coded secret.
+No API keys are required for the configured public sources. The adapters use modest request budgets, a local cache, and per-source status messages. The default query budget prioritizes trying each related job-title phrase before fetching deeper pages from any one phrase.
 
 Optional environment variables:
 
 - `OPPORTUNITY_CACHE_DIR`: cache directory (default `.opportunity-cache`).
 - `OPPORTUNITY_SOURCES`: comma-separated source allowlist, e.g. `himalayas,jobicy,remoteok`.
-- `OPPORTUNITY_MAX_PAGES`: pagination cap per paginated source (default 10). Higher values may increase request volume; a provider may rate-limit you.
-- `OPPORTUNITY_REMOTEJOBS_MAX_REQUESTS`: per-search request budget for RemoteJobs.org (default 60, hard-capped at 150 to stay below its published 200/hour/IP guidance).
+- `OPPORTUNITY_MAX_PAGES`: pagination cap per phrase for paginated sources (default 10).
+- `OPPORTUNITY_REMOTEJOBS_MAX_REQUESTS`: per-search request budget for RemoteJobs.org (default 60, capped at 150 to stay below its published 200/hour/IP guidance).
 - `OPPORTUNITY_JOBICY_MAX_REQUESTS`: per-search request budget for Jobicy variants (default 30, capped at 60).
 - `OPPORTUNITY_HIMALAYAS_MAX_REQUESTS`: per-search request budget for Himalayas variants (default 20, capped at 50).
 
+Higher request budgets improve coverage but increase traffic. RemoteJobs.org explicitly asks clients to stay below 200 requests per hour per IP; its default request budget is set below that guidance. Responses are cached locally to reduce repeated requests. Do not treat an undocumented provider limit as unlimited.
 ## Result fields
 
 Each result preserves the original listing URL and includes company, title, location/eligibility, publication date, remote status, normalized summary and full description, tags, employment type/seniority when provided, optional salary fields, application URL, source attribution, and a keyword relevance score with the field that matched. Salary, employment type, seniority, dates, company names, and eligibility are not available for every source; missing fields remain marked unknown rather than being invented.
