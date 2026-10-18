@@ -962,34 +962,49 @@ def search_jobs(
     total_raw = sum(len(source.get("jobs", [])) for source in source_reports)
     candidates: list[dict[str, Any]] = []
     excluded_date = excluded_unknown_date = excluded_location = excluded_nonremote = 0
-    keyword_matches = 0
+    excluded_by_relevance = 0
+    relevance_matches = 0
 
     for source in source_reports:
-        for job in source.get("jobs", []):
-            if not _matches_query(job, query):
+        for original_job in source.get("jobs", []):
+            score, reason = _query_relevance(original_job, query)
+            # Retain weak description-only mentions for review, but not as normal matches.
+            if score < 30:
+                excluded_by_relevance += 1
                 continue
-            keyword_matches += 1
-            keep_date = _date_filter(job, cutoff)
+
+            relevance_matches += 1
+            keep_date = _date_filter(original_job, cutoff)
             if keep_date is None:
                 excluded_unknown_date += 1
                 continue
             if not keep_date:
                 excluded_date += 1
                 continue
-            if not _matches_location(job, location):
+            if not _matches_location(original_job, location):
                 excluded_location += 1
                 continue
-            if remote_only and job.get("remote_status") in ("onsite", "hybrid"):
+            if remote_only and original_job.get("remote_status") in ("onsite", "hybrid"):
                 excluded_nonremote += 1
                 continue
+
+            job = dict(original_job)
+            job["relevance_score"] = score
+            job["match_reason"] = reason
             candidates.append(job)
 
     deduped, duplicates_removed = _dedupe(candidates)
     deduped.sort(
-        key=lambda job: parse_datetime(job.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda job: (
+            int(job.get("relevance_score", 0)),
+            parse_datetime(job.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        ),
         reverse=True,
     )
-    results = deduped[:max_results]
+    strong_matches = [job for job in deduped if int(job.get("relevance_score", 0)) >= 45]
+    near_matches = [job for job in deduped if 30 <= int(job.get("relevance_score", 0)) < 45]
+    results = strong_matches[:max_results]
+    near_matches = near_matches[:min(20, max_results)]
 
     timeframe_label = (
         f"last {days} day(s)" if days is not None
@@ -1011,11 +1026,14 @@ def search_jobs(
             for source in source_reports
         ],
         "source_jobs_fetched": total_raw,
-        "keyword_matches_before_filters": keyword_matches,
+        "keyword_matches_before_filters": relevance_matches,
         "results_count": len(results),
         "results": results,
+        "near_matches_count": len(near_matches),
+        "near_matches": near_matches,
         "audit": {
             "duplicates_removed": duplicates_removed,
+            "excluded_by_relevance": excluded_by_relevance,
             "excluded_by_timeframe": excluded_date,
             "excluded_unknown_publication_date": excluded_unknown_date,
             "excluded_by_location": excluded_location,
