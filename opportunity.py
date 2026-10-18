@@ -467,7 +467,9 @@ def _fetch_jobicy(query: str, days: int | None) -> dict[str, Any]:
                     partial = True
                     budget_exhausted = True
                     break
-                params: dict[str, str] = {"count": "200", "tag": variant[:50]}
+                params: dict[str, str] = {"count": "200"}
+                if variant:
+                    params["tag"] = variant[:50]
                 if state["cursor"]:
                     params["cursor"] = str(state["cursor"])
                 url = "https://jobicy.com/api/v2/remote-jobs?" + urllib.parse.urlencode(params)
@@ -503,6 +505,8 @@ def _fetch_jobicy(query: str, days: int | None) -> dict[str, Any]:
         message = (
             f"Queried {len(variants)} role-title phrase(s); read {requests_made} page(s) "
             "from Jobicy's last-7-days feed."
+            if query else
+            f"No keyword supplied; requested latest available Jobicy listings and read {requests_made} page(s)."
         )
         if budget_exhausted:
             message += (
@@ -582,7 +586,9 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
                     partial = True
                     budget_exhausted = True
                     break
-                params = {"q": variant, "sort": "recent", "page": str(state["page"])}
+                params = {"sort": "recent", "page": str(state["page"])}
+                if variant:
+                    params["q"] = variant
                 url = "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode(params)
                 data, meta = _request_json(url, ttl_seconds=DAY)
                 requests_made += 1
@@ -607,6 +613,9 @@ def _fetch_himalayas(query: str, days: int | None = None) -> dict[str, Any]:
         meta_summary = {"cache_used": cache_used, "cache_stale": stale}
         message = (
             f"Queried {len(variants)} role-title phrase(s); read {pages_read} page(s) "
+            f"using {requests_made} API request(s)."
+            if query else
+            f"No keyword supplied; requested latest available listings; read {pages_read} page(s) "
             f"using {requests_made} API request(s)."
         )
         if budget_exhausted:
@@ -839,11 +848,13 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
                     partial = True
                     budget_exhausted = True
                     break
-                params = urllib.parse.urlencode({
-                    "q": variant,
+                params_dict: dict[str, str | int] = {
                     "limit": 50,
                     "offset": state["offset"],
-                })
+                }
+                if variant:
+                    params_dict["q"] = variant
+                params = urllib.parse.urlencode(params_dict)
                 url = "https://remotejobs.org/api/v1/jobs?" + params
                 data, meta = _request_json(url, ttl_seconds=HOUR)
                 requests_made += 1
@@ -882,6 +893,9 @@ def _fetch_remotejobsorg(query: str, days: int | None) -> dict[str, Any]:
         meta_summary = {"cache_used": cache_used, "cache_stale": stale}
         message = (
             f"Queried {len(variants)} keyword phrase(s); read {pages_read} page(s) "
+            f"using {requests_made} API request(s)."
+            if query else
+            f"No keyword supplied; requested latest available listings; read {pages_read} page(s) "
             f"using {requests_made} API request(s)."
         )
         if budget_exhausted:
@@ -1289,8 +1303,7 @@ def search_jobs(
         sources: Optional source IDs to query. Omit to run every configured source.
     """
     query = str(query or "").strip()
-    if not query:
-        raise ValueError("query cannot be blank")
+    latest_mode = not query
     if days is not None and since is not None:
         raise ValueError("Use either days or since, not both")
     if days is not None and (not isinstance(days, int) or days < 1):
@@ -1346,14 +1359,16 @@ def search_jobs(
 
     for source in source_reports:
         for original_job in source.get("jobs", []):
-            score, reason = _query_relevance(original_job, query)
-            # Recall-first: keep broad exact-phrase/body matches with a low score.
-            # Only exclude records that contain neither the query nor a recognized title synonym.
-            if score < 20:
-                excluded_by_relevance += 1
-                continue
-
-            relevance_matches += 1
+            if latest_mode:
+                score, reason = 0, "latest listing; no keyword filter"
+            else:
+                score, reason = _query_relevance(original_job, query)
+                # Recall-first: keep broad exact-phrase/body matches with a low score.
+                # Only exclude records that contain neither the query nor a recognized title synonym.
+                if score < 20:
+                    excluded_by_relevance += 1
+                    continue
+                relevance_matches += 1
             keep_date = _date_filter(original_job, cutoff)
             if keep_date is None:
                 excluded_unknown_date += 1
@@ -1383,17 +1398,24 @@ def search_jobs(
             candidates.append(job)
 
     deduped, duplicates_removed = _dedupe(candidates)
-    deduped.sort(
-        key=lambda job: (
-            int(job.get("relevance_score", 0)),
-            parse_datetime(job.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
-        ),
-        reverse=True,
-    )
+    if latest_mode:
+        # With no keyword, publication recency is the primary and only ranking signal.
+        deduped.sort(
+            key=lambda job: parse_datetime(job.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+    else:
+        deduped.sort(
+            key=lambda job: (
+                int(job.get("relevance_score", 0)),
+                parse_datetime(job.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
+            ),
+            reverse=True,
+        )
     results = deduped[:max_results]
-    strong_matches_count = sum(1 for job in deduped if int(job.get("relevance_score", 0)) >= 75)
-    broader_matches_count = len(deduped) - strong_matches_count
-    near_matches = [job for job in deduped if int(job.get("relevance_score", 0)) < 75][:min(20, max_results)]
+    strong_matches_count = 0 if latest_mode else sum(1 for job in results if int(job.get("relevance_score", 0)) >= 75)
+    broader_matches_count = 0 if latest_mode else len(results) - strong_matches_count
+    near_matches = [] if latest_mode else [job for job in deduped if int(job.get("relevance_score", 0)) < 75][:min(20, max_results)]
 
     timeframe_label = (
         f"last {days} day(s)" if days is not None
@@ -1403,6 +1425,7 @@ def search_jobs(
     finished = _now_utc()
     return {
         "query": query,
+        "search_mode": "latest" if latest_mode else "keyword",
         "started_at": _iso(started),
         "completed_at": _iso(finished),
         "elapsed_seconds": round((finished - started).total_seconds(), 2),
@@ -1418,8 +1441,8 @@ def search_jobs(
         "keyword_matches_before_filters": relevance_matches,
         "results_count": len(results),
         "results": results,
-        "strong_matches_count": sum(1 for job in results if int(job.get("relevance_score", 0)) >= 75),
-        "broader_matches_count": sum(1 for job in results if int(job.get("relevance_score", 0)) < 75),
+        "strong_matches_count": 0 if latest_mode else sum(1 for job in results if int(job.get("relevance_score", 0)) >= 75),
+        "broader_matches_count": 0 if latest_mode else sum(1 for job in results if int(job.get("relevance_score", 0)) < 75),
         "location_eligibility_unknown_count": sum(
             1 for job in results
             if job.get("location_eligibility") == "Not specified by source; check the original listing"
@@ -1448,11 +1471,16 @@ def search_jobs(
 
 def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> None:
     """Print a human-readable report while preserving all text in report['results']."""
-    print(f'\nOPPORTUNITY SEARCH: "{report["query"]}"')
+    latest_mode = report.get("search_mode") == "latest" or not report.get("query", "").strip()
+    display_query = report["query"] if report.get("query") else "Latest listings (no keyword filter)"
+    print(f'\nOPPORTUNITY SEARCH: "{display_query}"')
     work_mode_filter = "remote only" if report["remote_only"] else "all work modes (where available)"
     print(f'Timeframe: {report["timeframe"]} | Work mode filter: {work_mode_filter}')
     print(f'Search took {report["elapsed_seconds"]}s; {report["results_count"]} candidate listing(s) returned.')
-    print(f'Direct/related title or skill matches: {report.get("strong_matches_count", 0)} | Broader keyword matches: {report.get("broader_matches_count", 0)}')
+    if latest_mode:
+        print("Keyword relevance: not applied | Results sorted by publication date (newest first)")
+    else:
+        print(f'Direct/related title or skill matches: {report.get("strong_matches_count", 0)} | Broader keyword matches: {report.get("broader_matches_count", 0)}')
     print("\nSOURCE STATUS")
     for source in report["sources"]:
         suffix = " [cache]" if source.get("cache_used") else ""
@@ -1466,12 +1494,18 @@ def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> No
         if source.get("cache_warning"):
             print(f'  WARNING: {source["cache_warning"]}')
 
-    print(f'\nALL KEYWORD / RELATED MATCHES ({report["results_count"]})')
+    section_title = "LATEST LISTINGS" if latest_mode else "ALL KEYWORD / RELATED MATCHES"
+    print(f'\n{section_title} ({report["results_count"]})')
     if not report["results"]:
-        print("No query phrase or recognized related-title matches survived the selected date/location filters.")
+        empty_message = (
+            "No listings were returned by the selected sources for the current filters."
+            if latest_mode else
+            "No query phrase or recognized related-title matches survived the selected date/location filters."
+        )
+        print(empty_message)
     for index, job in enumerate(report["results"], start=1):
         print(f'\n{index}. {job["title"]} — {job["company"]}')
-        if job.get("relevance_score") is not None:
+        if not latest_mode and job.get("relevance_score") is not None:
             score = int(job["relevance_score"])
             kind = "DIRECT / CLOSE RELATED" if score >= 75 else "RELATED" if score >= 45 else "BROAD KEYWORD HIT — VERIFY"
             print(f'   Match type: {kind}')
@@ -1529,9 +1563,12 @@ def print_report(report: dict[str, Any], *, description_chars: int = 1000) -> No
 
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Search multiple public job feeds from your PC or Google Colab."
+        description="Search public job feeds by keyword, or browse latest available listings when no keyword is supplied."
     )
-    parser.add_argument("query", help='Keyword phrase, e.g. "data entry"')
+    parser.add_argument(
+        "query", nargs="?", default="",
+        help='Optional keyword phrase, e.g. "data entry"; omit it to browse latest listings'
+    )
     timeframe = parser.add_mutually_exclusive_group()
     timeframe.add_argument("--days", type=int, help="Rolling publication window, e.g. --days 5")
     timeframe.add_argument("--since", help="Only listings on/after YYYY-MM-DD")
