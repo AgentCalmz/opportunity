@@ -55,7 +55,7 @@ jobs:
           report = search_jobs("", days=14, location=None, remote_only=False, max_results=5000)
           output = Path("site/data/jobs.json")
           output.parent.mkdir(parents=True, exist_ok=True)
-          output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+          output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           print(f"Collected {report['results_count']} listings across {len(report['sources'])} configured sources.")
           for source in report["sources"]:
               suffix = " (cache)" if source.get("cache_used") else ""
