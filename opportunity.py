@@ -1184,7 +1184,7 @@ def search_jobs(
     since: str | date | datetime | None = None,
     location: str | None = None,
     remote_only: bool = True,
-    max_results: int = 100,
+    max_results: int = 5000,
     sources: list[str] | None = None,
 ) -> dict[str, Any]:
     """Search configured public job sources and return a JSON-serializable report.
@@ -1332,11 +1332,14 @@ def search_jobs(
         "keyword_matches_before_filters": relevance_matches,
         "results_count": len(results),
         "results": results,
+        "strong_matches_count": sum(1 for job in results if int(job.get("relevance_score", 0)) >= 75),
+        "broader_matches_count": sum(1 for job in results if int(job.get("relevance_score", 0)) < 75),
+        "location_eligibility_unknown_count": unknown_location_eligibility,
         "near_matches_count": len(near_matches),
         "near_matches": near_matches,
         "audit": {
             "duplicates_removed": duplicates_removed,
-            "excluded_by_relevance": excluded_by_relevance,
+            "excluded_no_query_or_related_title_match": excluded_by_relevance,
             "excluded_by_timeframe": excluded_date,
             "excluded_unknown_publication_date": excluded_unknown_date,
             "excluded_by_location": excluded_location,
@@ -1448,7 +1451,7 @@ def _main(argv: list[str] | None = None) -> int:
     timeframe.add_argument("--since", help="Only listings on/after YYYY-MM-DD")
     parser.add_argument("--location", help='Country/region filter, e.g. "Nigeria"')
     parser.add_argument("--include-nonremote", action="store_true", help="Include known onsite/hybrid results")
-    parser.add_argument("--max-results", type=int, default=100, help="Maximum displayed results (default: 100)")
+    parser.add_argument("--max-results", type=int, default=5000, help="Maximum displayed results (default: 5000; raise only if needed)")
     parser.add_argument("--source", action="append", help=f"Source ID to run; repeatable. Available: {', '.join(SOURCE_RUNNERS)}")
     parser.add_argument("--json", action="store_true", help="Print the full JSON report")
     parser.add_argument("--out", help="Also write the full JSON report to a file")
