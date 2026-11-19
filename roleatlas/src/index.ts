@@ -93,7 +93,7 @@ async function collect(env:Env,force=false,trigger="cron"){
   const start=new Date().toISOString(),ins=await env.DB.prepare("INSERT INTO collection_runs(started_at,trigger_type) VALUES(?,?)").bind(start,trigger).run(),runId=Number(ins.meta.last_row_id||0);
   let attempted=0,succeeded=0,jobsSeen=0,jobsSaved=0,errors=0;
   const src=await env.DB.prepare("SELECT * FROM sources WHERE enabled=1 ORDER BY last_checked_at IS NOT NULL,last_checked_at ASC").all<any>();
-  const feeds=(src.results||[]).filter((s:any)=>due(s.last_checked_at,s.cooldown_hours)).slice(0,8);
+  const feeds=(src.results||[]).filter((s:any)=>force||due(s.last_checked_at,s.cooldown_hours)).slice(0,8);
   await Promise.all(feeds.map(async(s:any)=>{
     attempted++;
     try{
