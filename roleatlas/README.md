@@ -29,7 +29,7 @@ This is a guide, not a promise that an employer will accept an application from 
 
 ## Deploy to Cloudflare
 
-Requirements: Cloudflare account, Node.js 20+, npm and Wrangler.
+Requirements: Cloudflare account, Node.js 22+ (supported LTS), npm and Wrangler.
 
 From the repository root:
 
